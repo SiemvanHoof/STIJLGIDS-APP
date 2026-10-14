@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420">
+  <rect x="0.0" y="0" width="480.5" height="420" fill="#5A1A17"/>
+  <text x="20.0" y="340" font-family="&quot;Courier Prime&quot;, system-ui, -apple-system, sans-serif" fill="#FFFFFF">
+    <tspan x="20.0" font-size="20" font-weight="700">Hoofdkleur</tspan>
+    <tspan x="20.0" dy="28" font-size="15">HEX #5A1A17</tspan>
+    <tspan x="20.0" dy="22" font-size="15">RGB 90 26 23</tspan>
+  </text>
+  <rect x="480.0" y="0" width="240.5" height="420" fill="#F3EEE7"/>
+  <text x="500.0" y="340" font-family="&quot;Courier Prime&quot;, system-ui, -apple-system, sans-serif" fill="#1C1C1C">
+    <tspan x="500.0" font-size="20" font-weight="700">Achtergrond</tspan>
+    <tspan x="500.0" dy="28" font-size="15">HEX #F3EEE7</tspan>
+    <tspan x="500.0" dy="22" font-size="15">RGB 243 238 231</tspan>
+  </text>
+  <rect x="720.0" y="0" width="240.5" height="420" fill="#E6D9C3"/>
+  <text x="740.0" y="340" font-family="&quot;Courier Prime&quot;, system-ui, -apple-system, sans-serif" fill="#1C1C1C">
+    <tspan x="740.0" font-size="20" font-weight="700">Accent</tspan>
+    <tspan x="740.0" dy="28" font-size="15">HEX #E6D9C3</tspan>
+    <tspan x="740.0" dy="22" font-size="15">RGB 230 217 195</tspan>
+  </text>
+  <rect x="960.0" y="0" width="240.5" height="420" fill="#1C1C1C"/>
+  <text x="980.0" y="340" font-family="&quot;Courier Prime&quot;, system-ui, -apple-system, sans-serif" fill="#FFFFFF">
+    <tspan x="980.0" font-size="20" font-weight="700">Tekst</tspan>
+    <tspan x="980.0" dy="28" font-size="15">HEX #1C1C1C</tspan>
+    <tspan x="980.0" dy="22" font-size="15">RGB 28 28 28</tspan>
+  </text>
+</svg>

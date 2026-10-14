@@ -1,0 +1,53 @@
+/* Test Project — stijlgids
+   Gemaakt met Studio Dashboard. Pas de stijlgids aan in de app, niet in dit bestand. */
+@import url("https://fonts.googleapis.com/css2?family=Bodoni+Moda&family=Pinyon+Script&family=Courier+Prime&family=Montserrat&family=Homemade+Apple&display=swap");
+
+:root {
+  /* Kleuren */
+  --kleur-hoofdkleur: #5A1A17;
+  --kleur-achtergrond: #F3EEE7;
+  --kleur-accent: #E6D9C3;
+  --kleur-tekst: #1C1C1C;
+
+  /* Rollen */
+  --achtergrond: var(--kleur-achtergrond);
+  --tekst: var(--kleur-tekst);
+  --hoofd: var(--kleur-hoofdkleur);
+  --tweede: var(--kleur-accent);
+  --op-hoofd: #FFFFFF;
+  --op-tweede: #1C1C1C;
+  --gedempt: #72706D;
+  --lijn: #D3CFC9;
+  --vlak: #F8F6F2;
+
+  /* Fonts */
+  --font-koppen: "Bodoni Moda", Georgia, 'Times New Roman', serif;
+  --font-sier: "Pinyon Script", 'Brush Script MT', cursive;
+  --font-tekst: "Courier Prime", system-ui, -apple-system, sans-serif;
+  --font-logo: "Montserrat", 'Helvetica Neue', Arial, sans-serif;
+  --font-hand: "Homemade Apple", 'Segoe Print', cursive;
+
+  /* Knoppen */
+  --knop-radius: 999px;
+}
+
+.knop {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 26px;
+  border-radius: var(--knop-radius);
+  border: 1px solid transparent;
+  font-family: var(--font-tekst);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+}
+.knop--primair { background: var(--hoofd); color: var(--op-hoofd); }
+.knop--secundair { background: var(--tweede); color: var(--op-tweede); }
+.knop--link { padding-inline: 2px; border-radius: 0; border-bottom-color: var(--hoofd); color: var(--hoofd); }
+
+.sier { font-family: var(--font-sier); font-weight: 400; color: var(--hoofd); }

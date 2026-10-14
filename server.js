@@ -9,6 +9,8 @@ const fs = require("fs/promises");
 const fsSync = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
+const { standaardStijlgids, normaliseer, maakHtml, genereer } = require("./stijlgids");
+const { maakExports, sluitBrowser } = require("./export");
 
 const app = express();
 const PORT = 3000;
@@ -55,29 +57,10 @@ async function schrijfProject(id, data) {
   );
 }
 
-// Start-HTML voor de site van een nieuw project
-function starterHtml(naam) {
-  return `<!DOCTYPE html>
-<html lang="nl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${naam}</title>
-</head>
-<body>
-  <h1>${naam}</h1>
-  <p>Hier komt de website.</p>
-</body>
-</html>
-`;
-}
-
 // In welke submap komt een geüpload bestand?
 function kiesSubmap(bestand) {
-  const ext = path.extname(bestand.originalname).toLowerCase();
   if (bestand.mimetype.startsWith("image/")) return "images";
-  if ([".html", ".htm", ".css", ".js"].includes(ext)) return "site";
-  return "documenten"; // pdf, docx, enz.
+  return "documenten";
 }
 
 // ---------- API: projecten ----------
@@ -106,7 +89,7 @@ app.get("/api/projecten/:id", async (req, res) => {
   res.json(await leesProject(req.params.id));
 });
 
-// Nieuw project aanmaken (maakt de hele mappenstructuur)
+// Nieuw project aanmaken (mappen + standaard stijlgids + PDF/PNG's)
 app.post("/api/projecten", async (req, res) => {
   const { naam, klant = "", status = "nog-beginnen", deadline = "", omschrijving = "" } = req.body;
 
@@ -130,9 +113,13 @@ app.post("/api/projecten", async (req, res) => {
 
   const nu = new Date().toISOString();
   const project = { naam, klant, status, deadline, omschrijving, aangemaakt: nu, bijgewerkt: nu };
+  const stijl = standaardStijlgids(naam);
 
   await schrijfProject(id, project);
-  await fs.writeFile(path.join(map, "site", "index.html"), starterHtml(naam));
+  await genereer(map, stijl);
+
+  // PDF en PNG's op de achtergrond maken, zodat je niet hoeft te wachten
+  maakExports(map, stijl).catch((fout) => console.error("Export mislukt:", fout.message));
 
   res.status(201).json({ ...project, id });
 });
@@ -203,24 +190,13 @@ app.get("/api/projecten/:id/bestanden", async (req, res) => {
           return {
             naam: b.name,
             grootte: info.size,
-            url: `/projecten/${path.basename(map)}/${sub}/${b.name}`,
+            url: `/projecten/${path.basename(map)}/${sub}/${b.name}?v=${Math.round(info.mtimeMs)}`,
           };
         })
     );
   }
 
   res.json(resultaat);
-});
-
-// Projectmap openen in Finder / Verkenner
-app.post("/api/projecten/:id/open", (req, res) => {
-  const map = projectPad(req.params.id);
-  const commando =
-    process.platform === "darwin" ? "open" :
-    process.platform === "win32" ? "explorer" : "xdg-open";
-
-  execFile(commando, [map]);
-  res.json({ ok: true });
 });
 
 // Bestand verwijderen (verplaatst naar .prullenbak in de projectmap)
@@ -246,13 +222,72 @@ app.delete("/api/projecten/:id/bestanden/:map/:naam", async (req, res) => {
   res.json({ ok: true });
 });
 
+// Projectmap openen in Finder / Verkenner
+app.post("/api/projecten/:id/open", (req, res) => {
+  const map = projectPad(req.params.id);
+  const commando =
+    process.platform === "darwin" ? "open" :
+    process.platform === "win32" ? "explorer" : "xdg-open";
+
+  execFile(commando, [map]);
+  res.json({ ok: true });
+});
+
+// ---------- API: stijlgids ----------
+
+// Stijlgids van een project ophalen
+app.get("/api/projecten/:id/stijlgids", async (req, res) => {
+  const project = await leesProject(req.params.id);
+  const bestand = path.join(projectPad(req.params.id), "stijlgids", "stijlgids.json");
+
+  try {
+    const data = JSON.parse(await fs.readFile(bestand, "utf8"));
+    res.json(normaliseer(data, project.naam));
+  } catch {
+    res.json(standaardStijlgids(project.naam));
+  }
+});
+
+// Stijlgids opslaan en alle bestanden genereren (inclusief PDF en PNG's)
+app.put("/api/projecten/:id/stijlgids", async (req, res) => {
+  const project = await leesProject(req.params.id);
+  const data = normaliseer(req.body, project.naam);
+  const map = projectPad(req.params.id);
+
+  const bestanden = await genereer(map, data);
+
+  let waarschuwing = null;
+  try {
+    bestanden.push(...(await maakExports(map, data)));
+  } catch (fout) {
+    console.error("Export mislukt:", fout.message);
+    waarschuwing = "De PDF en PNG's konden niet gemaakt worden. De rest is wel opgeslagen.";
+  }
+
+  project.bijgewerkt = new Date().toISOString();
+  await schrijfProject(req.params.id, project);
+
+  res.json({ data, bestanden, waarschuwing });
+});
+
+// Live voorbeeld voor de editor (slaat niks op)
+app.post("/api/stijlgids/voorbeeld", (req, res) => {
+  res.type("html").send(maakHtml(normaliseer(req.body)));
+});
+
 // ---------- Foutafhandeling ----------
 app.use((fout, req, res, next) => {
   const status = fout.code === "ENOENT" ? 404 : 500;
-  const bericht = status === 404 ? "Project niet gevonden." : fout.message;
+  const bericht = status === 404 ? "Project of bestand niet gevonden." : fout.message;
   res.status(status).json({ fout: bericht });
 });
 
 app.listen(PORT, () => {
   console.log(`Studio Dashboard draait op http://localhost:${PORT}`);
+});
+
+// Onzichtbare Chrome netjes afsluiten bij Ctrl + C
+process.on("SIGINT", async () => {
+  await sluitBrowser();
+  process.exit(0);
 });

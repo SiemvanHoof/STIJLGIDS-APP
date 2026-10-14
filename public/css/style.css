@@ -220,6 +220,12 @@ a {
   color: var(--text);
 }
 
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
+}
+
 .topbar__divider {
   width: 1px;
   height: 20px;
@@ -236,7 +242,7 @@ a {
 }
 
 /* =========================================
-   6. MOBIEL
+   6. MOBIEL (layout)
    ========================================= */
 @media (max-width: 800px) {
   .app {
@@ -301,6 +307,7 @@ code {
 .icon-tile--blue { background: #EBF2FE; color: var(--blue); border-color: #D6E4FD; }
 .icon-tile--yellow { background: #FEF8E1; color: #CA8A04; border-color: #FBEFC0; }
 .icon-tile--red { background: var(--red-soft); color: var(--red); border-color: #FAD7D8; }
+.icon-tile--groot { width: 56px; height: 56px; }
 
 /* =========================================
    8. KNOPPEN
@@ -333,6 +340,14 @@ code {
 
 .btn--icon { padding: 8px; }
 
+.btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+.btn:disabled .lucide-loader {
+  animation: draaien 1s linear infinite;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -345,10 +360,21 @@ code {
 }
 .chip [data-lucide], .chip .lucide { width: 14px; height: 14px; }
 
+.badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 button:focus-visible,
 select:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+a:focus-visible,
+summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -446,6 +472,10 @@ textarea:focus-visible {
   font-weight: 500;
 }
 
+.panel__titel [data-lucide], .panel__titel .lucide {
+  color: var(--text-muted);
+}
+
 .project-lijst {
   display: flex;
   flex-direction: column;
@@ -465,20 +495,32 @@ textarea:focus-visible {
 .project__info {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  border-radius: 6px;
 }
 
 .project__meta {
+  display: block;
   color: var(--text-light);
   font-size: 13px;
   margin-bottom: 2px;
 }
 
 .project__naam {
+  display: block;
   font-size: 17px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.project__info:hover .project__naam {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
 }
 
 .project__rechts {
@@ -647,60 +689,8 @@ textarea:focus-visible {
 .toast--fout { background: var(--red); }
 .toast.is-weg { opacity: 0; transform: translateY(6px); }
 
-@keyframes fade-in { from { opacity: 0; } }
-@keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
-
-@media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; transition: none !important; }
-}
-
 /* =========================================
-   13. MOBIEL (lijst)
-   ========================================= */
-@media (max-width: 640px) {
-  .project {
-    flex-wrap: wrap;
-  }
-  .project__rechts {
-    width: 100%;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .veld-rij {
-    flex-direction: column;
-  }
-}
-
-/* =========================================
-   14. KLIKBARE PROJECTEN
-   ========================================= */
-.project__info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  text-align: left;
-  border-radius: 6px;
-}
-
-.project__info .project__meta { display: block; }
-.project__naam { display: block; }
-
-.project__info:hover .project__naam {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-thickness: 1px;
-}
-
-.icon-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-  background: none;
-}
-
-/* =========================================
-   15. PROJECTPAGINA
+   13. PROJECTPAGINA
    ========================================= */
 .terug-link {
   display: inline-flex;
@@ -719,11 +709,6 @@ textarea:focus-visible {
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-}
-
-.icon-tile--groot {
-  width: 56px;
-  height: 56px;
 }
 
 .detail__titel {
@@ -782,6 +767,32 @@ textarea:focus-visible {
   max-width: 70ch;
 }
 
+/* Stijlgids-kaart */
+.stijlgids-kaart {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.stijlgids-kaart__tekst {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.stijlgids-kaart h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.stijlgids-kaart p { max-width: 60ch; }
+
 /* Uploadvlak */
 .dropzone {
   display: flex;
@@ -807,12 +818,8 @@ textarea:focus-visible {
 /* Mappen */
 .mappen {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 16px;
-}
-
-.panel__titel [data-lucide], .panel__titel .lucide {
-  color: var(--text-muted);
 }
 
 .teller {
@@ -886,7 +893,246 @@ textarea:focus-visible {
   background: var(--red);
 }
 
+/* =========================================
+   14. EDITOR
+   ========================================= */
+.editor-kop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.editor-kop .terug-link { margin-bottom: 0; }
+
+.editor-kop__acties {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.editor {
+  display: grid;
+  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.editor__panelen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Paneel zoals afbeelding 1 */
+.ed-paneel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.ed-paneel summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 18px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  border-radius: var(--radius-md);
+}
+.ed-paneel summary::-webkit-details-marker { display: none; }
+
+.ed-paneel summary [data-lucide],
+.ed-paneel summary .lucide {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  transition: transform 0.15s;
+}
+.ed-paneel[open] summary .lucide { transform: rotate(90deg); }
+
+.ed-paneel__inhoud {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.ed-rij {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+.ed-rij > span {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.ed-rij--blok {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.ed-input {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg-white);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 7px 10px;
+}
+textarea.ed-input { resize: vertical; line-height: 1.5; }
+.ed-input--mono {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+/* Kleurrij */
+.ed-kleur {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 86px 28px;
+  gap: 6px;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.ed-kleur input[type="color"] {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+.ed-kleur input[type="color"]::-webkit-color-swatch-wrapper { padding: 3px; }
+.ed-kleur input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+.ed-kleur__gebruik {
+  grid-column: 2 / -1;
+  font-size: 13px;
+}
+
+.ed-erbij { align-self: flex-start; }
+
+.ed-scheiding {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* Schuifje met waarde */
+.ed-schuif {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ed-schuif input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.ed-waarde {
+  min-width: 56px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Voorbeeld in een browservenster */
+.editor__voorbeeld {
+  position: sticky;
+  top: 16px;
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.25);
+}
+
+.voorbeeld-balk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+.voorbeeld-balk .dot { width: 10px; height: 10px; }
+
+.voorbeeld-balk__url {
+  flex: 1;
+  margin-left: 10px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#voorbeeld {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 160px);
+  min-height: 480px;
+  border: 0;
+  background: var(--bg-white);
+}
+
+/* =========================================
+   15. ANIMATIES
+   ========================================= */
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@keyframes draaien { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+
+/* =========================================
+   16. MOBIEL (inhoud)
+   ========================================= */
+@media (max-width: 980px) {
+  .editor { grid-template-columns: 1fr; }
+  .editor__voorbeeld { position: static; }
+  #voorbeeld { height: 70vh; }
+}
+
 @media (max-width: 640px) {
-  .mappen { grid-template-columns: 1fr; }
-  .info-grid > div { border-right: none; border-bottom: 1px solid var(--border); }
+  .project {
+    flex-wrap: wrap;
+  }
+  .project__rechts {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .veld-rij {
+    flex-direction: column;
+  }
+  .mappen {
+    grid-template-columns: 1fr;
+  }
+  .info-grid > div {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
 }

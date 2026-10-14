@@ -19,7 +19,6 @@ const PAGINAS = {
 };
 
 const MAPPEN = {
-  site:       { label: "Website",      icoon: "code" },
   images:     { label: "Afbeeldingen", icoon: "image" },
   documenten: { label: "Documenten",   icoon: "file-text" },
   stijlgids:  { label: "Stijlgids",    icoon: "palette" },
@@ -31,6 +30,7 @@ let openProjectId = null;
 let bestanden = null;
 let zoekterm = "";
 let actiefFilter = "";
+let modus = "project"; // "project" of "stijlgids"
 
 const geschiedenis = { terug: [], vooruit: [] };
 
@@ -95,7 +95,7 @@ function isAfbeelding(naam) {
 function bestandIcoon(naam) {
   const ext = naam.split(".").pop().toLowerCase();
   if (ext === "pdf") return "file-text";
-  if (["html", "htm", "css", "js"].includes(ext)) return "file-code";
+  if (["html", "htm", "css", "js", "json"].includes(ext)) return "file-code";
   if (["doc", "docx", "txt", "md"].includes(ext)) return "file-type";
   if (["zip", "rar"].includes(ext)) return "file-archive";
   return "file";
@@ -117,10 +117,10 @@ function toast(tekst, soort = "ok") {
 // ---------- Navigatie ----------
 
 function huidigeStand() {
-  return { pagina: huidigePagina, projectId: openProjectId };
+  return { pagina: huidigePagina, projectId: openProjectId, modus };
 }
 
-function gaNaar(pagina, projectId = null, { opslaan = true } = {}) {
+function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "project" } = {}) {
   if (opslaan) {
     geschiedenis.terug.push(huidigeStand());
     geschiedenis.vooruit = [];
@@ -128,14 +128,17 @@ function gaNaar(pagina, projectId = null, { opslaan = true } = {}) {
 
   huidigePagina = pagina;
   openProjectId = projectId;
+  modus = projectId ? nieuweModus : "project";
   bestanden = null;
+  stijlgids = null;
 
   document.querySelectorAll(".nav__item").forEach((item) => {
     item.classList.toggle("is-active", item.dataset.page === pagina);
   });
 
   render();
-  if (projectId) laadBestanden();
+  if (projectId && modus === "project") laadBestanden();
+  if (projectId && modus === "stijlgids") laadStijlgids();
   window.scrollTo(0, 0);
 }
 
@@ -143,14 +146,14 @@ knopTerug.addEventListener("click", () => {
   const vorige = geschiedenis.terug.pop();
   if (!vorige) return;
   geschiedenis.vooruit.push(huidigeStand());
-  gaNaar(vorige.pagina, vorige.projectId, { opslaan: false });
+  gaNaar(vorige.pagina, vorige.projectId, { opslaan: false, nieuweModus: vorige.modus });
 });
 
 knopVooruit.addEventListener("click", () => {
   const volgende = geschiedenis.vooruit.pop();
   if (!volgende) return;
   geschiedenis.terug.push(huidigeStand());
-  gaNaar(volgende.pagina, volgende.projectId, { opslaan: false });
+  gaNaar(volgende.pagina, volgende.projectId, { opslaan: false, nieuweModus: volgende.modus });
 });
 
 // ---------- Data ----------
@@ -206,7 +209,6 @@ async function uploadBestanden(lijst) {
   toast(`${lijst.length} ${lijst.length === 1 ? "bestand" : "bestanden"} uploaden…`);
 
   try {
-    // Geen api() hier: bij FormData zet de browser zelf het juiste type
     const res = await fetch(`/api/projecten/${openProjectId}/bestanden`, {
       method: "POST",
       body: formData,
@@ -320,6 +322,10 @@ function bestandKaart(map, bestand) {
     ? `<img src="${esc(bestand.url)}" alt="" loading="lazy">`
     : `<i data-lucide="${bestandIcoon(bestand.naam)}"></i>`;
 
+  const gemaakt = GEGENEREERD.includes(bestand.naam)
+    ? ` · <span class="badge">gemaakt</span>`
+    : "";
+
   return `
     <article class="bestand">
       <a class="bestand__voorbeeld" href="${esc(bestand.url)}" target="_blank" rel="noopener" title="Openen">
@@ -328,7 +334,7 @@ function bestandKaart(map, bestand) {
       <div class="bestand__info">
         <div>
           <p class="bestand__naam" title="${esc(bestand.naam)}">${esc(bestand.naam)}</p>
-          <p class="muted klein">${formatGrootte(bestand.grootte)}</p>
+          <p class="muted klein">${formatGrootte(bestand.grootte)}${gemaakt}</p>
         </div>
         <button class="icon-btn bestand__weg" data-verwijder="${esc(map)}" data-naam="${esc(bestand.naam)}" title="Verwijderen">
           <i data-lucide="trash-2"></i>
@@ -434,7 +440,9 @@ function renderProject() {
 
   const s = STATUS[p.status];
   const totaal = bestanden
-    ? Object.values(bestanden).reduce((som, lijst) => som + lijst.length, 0)
+    ? Object.entries(bestanden)
+        .filter(([map]) => map !== "site")
+        .reduce((som, [, lijst]) => som + lijst.length, 0)
     : "…";
 
   content.innerHTML = `
@@ -450,9 +458,6 @@ function renderProject() {
           <h2>${esc(p.naam)}</h2>
         </div>
         <div class="detail__acties">
-          <a class="btn btn--ghost" href="/projecten/${esc(p.id)}/site/index.html" target="_blank" rel="noopener">
-            <i data-lucide="external-link"></i> Bekijk site
-          </a>
           <button class="btn btn--ghost" data-open="${esc(p.id)}">
             <i data-lucide="folder-open"></i> Open map
           </button>
@@ -473,11 +478,29 @@ function renderProject() {
       ${p.omschrijving ? `<p class="detail__omschrijving">${esc(p.omschrijving)}</p>` : ""}
     </section>
 
+    <section class="panel stijlgids-kaart">
+      <div class="stijlgids-kaart__tekst">
+        <div class="icon-tile"><i data-lucide="palette"></i></div>
+        <div>
+          <h2>Stijlgids en website</h2>
+          <p class="muted">Vul de kleuren, fonts en knoppen in. Bij opslaan maakt de app de website en de bestanden in de mappen hieronder.</p>
+        </div>
+      </div>
+      <div class="detail__acties">
+        <a class="btn btn--ghost" href="/projecten/${esc(p.id)}/site/index.html" target="_blank" rel="noopener">
+          <i data-lucide="external-link"></i> Bekijk website
+        </a>
+        <button class="btn btn--primary" data-stijlgids>
+          <i data-lucide="pencil-ruler"></i> Stijlgids bewerken
+        </button>
+      </div>
+    </section>
+
     <label class="dropzone" id="dropzone">
       <input type="file" multiple id="upload-input" hidden>
       <div class="icon-tile"><i data-lucide="upload"></i></div>
       <p><strong>Sleep bestanden hierheen</strong> of klik om te kiezen</p>
-      <p class="muted klein">Afbeeldingen gaan naar images, HTML/CSS/JS naar site, de rest naar documenten.</p>
+      <p class="muted klein">Afbeeldingen gaan naar images, de rest naar documenten.</p>
     </label>
 
     <div class="mappen">
@@ -501,8 +524,11 @@ function renderBinnenkort(naam) {
 function render() {
   if (openProjectId) {
     const p = projecten.find((x) => x.id === openProjectId);
-    titel.textContent = p ? p.naam : "Project";
-    renderProject();
+    const naam = p ? p.naam : "Project";
+    titel.textContent = modus === "stijlgids" ? `${naam} · Stijlgids` : naam;
+
+    if (modus === "stijlgids") renderEditor();
+    else renderProject();
   } else {
     titel.textContent = PAGINAS[huidigePagina];
     if (huidigePagina === "dashboard") renderDashboard();
@@ -513,6 +539,8 @@ function render() {
   knopVooruit.disabled = !geschiedenis.vooruit.length;
 
   lucide.createIcons();
+
+  if (openProjectId && modus === "stijlgids" && stijlgids) verversVoorbeeld(0);
 }
 
 // ---------- Projectformulier (nieuw + bewerken) ----------
@@ -560,7 +588,7 @@ function openProjectFormulier(project = null) {
         <p class="muted klein">
           ${bewerken
             ? "Let op: de mapnaam blijft hetzelfde, ook als je de projectnaam aanpast."
-            : "Er wordt een map aangemaakt met <code>site</code>, <code>images</code>, <code>documenten</code> en <code>stijlgids</code>."}
+            : "Er wordt een map aangemaakt met een standaard stijlgids, website en de mappen <code>images</code>, <code>documenten</code> en <code>stijlgids</code>."}
         </p>
         <p class="form-fout" hidden></p>
       </div>
@@ -648,6 +676,10 @@ content.addEventListener("click", (e) => {
     return openProjectFormulier(projecten.find((p) => p.id === openProjectId));
   }
 
+  if (e.target.closest("[data-stijlgids]")) {
+    return gaNaar(huidigePagina, openProjectId, { nieuweModus: "stijlgids" });
+  }
+
   if (e.target.closest("#nieuw-project")) return openProjectFormulier();
 
   // Verwijderen: eerste klik vraagt bevestiging, tweede klik verwijdert
@@ -715,4 +747,5 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------- Start ----------
-laadProjecten();
+// Wacht tot editor.js ook geladen is
+window.addEventListener("DOMContentLoaded", laadProjecten);

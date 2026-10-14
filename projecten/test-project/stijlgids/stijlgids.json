@@ -1,0 +1,46 @@
+{
+  "naam": "Test Project",
+  "slogan": "Een korte zin over wat dit merk doet.",
+  "intro": "",
+  "kleuren": [
+    {
+      "naam": "Hoofdkleur",
+      "hex": "#5A1A17",
+      "gebruik": "Logo, knoppen en accenten."
+    },
+    {
+      "naam": "Achtergrond",
+      "hex": "#F3EEE7",
+      "gebruik": "De basis van elke pagina."
+    },
+    {
+      "naam": "Accent",
+      "hex": "#E6D9C3",
+      "gebruik": "Vlakken en secundaire knoppen."
+    },
+    {
+      "naam": "Tekst",
+      "hex": "#1C1C1C",
+      "gebruik": "Alle lopende tekst."
+    }
+  ],
+  "rollen": {
+    "achtergrond": 1,
+    "tekst": 3,
+    "hoofd": 0,
+    "tweede": 2
+  },
+  "fonts": {
+    "koppen": "Bodoni Moda",
+    "sier": "Pinyon Script",
+    "tekst": "Courier Prime",
+    "logo": "Montserrat",
+    "hand": "Homemade Apple"
+  },
+  "knoppen": {
+    "radius": 999,
+    "primair": "Neem contact op",
+    "secundair": "Bekijk werk",
+    "link": "Meer over ons"
+  }
+}
