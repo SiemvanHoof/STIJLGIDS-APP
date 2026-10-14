@@ -15,12 +15,26 @@ const FONT_SUGGESTIES = [
   "Work Sans", "Karla", "Lora", "Instrument Sans",
 ];
 
-const FONT_VELDEN = [
-  ["koppen", "Koppen"],
-  ["sier", "Sierletter"],
-  ["tekst", "Tekst"],
-  ["logo", "Logo"],
-  ["hand", "Handschrift"],
+// Moet overeenkomen met FONT_ROLLEN in stijlgids.js
+const FONT_ROLLEN = {
+  koppen: { label: "Koppen", gebruik: "Titels en grote koppen.", voorbeeld: "Playfair Display" },
+  tekst: { label: "Lopende tekst", gebruik: "Alinea's, knoppen en labels.", voorbeeld: "Inter" },
+  sier: { label: "Sierletter", gebruik: "Eén beginletter in een kop, nooit hele zinnen.", voorbeeld: "Pinyon Script" },
+  logo: { label: "Logo", gebruik: "Het logo en korte labels in hoofdletters.", voorbeeld: "Montserrat" },
+  hand: { label: "Handschrift", gebruik: "Korte, persoonlijke notities.", voorbeeld: "Caveat" },
+  accent: { label: "Accent", gebruik: "Citaten, cijfers of andere opvallende tekst.", voorbeeld: "Fraunces" },
+};
+
+// De vaste kopjes over het merk
+const CONTEXT_VELDEN = [
+  { key: "over", label: "Over het merk", hint: "Wie zijn jullie en wat doen jullie?", rijen: 4 },
+  { key: "doelgroep", label: "Doelgroep", hint: "Voor wie is het merk? Leeftijd, interesses, waar zijn ze te vinden?", rijen: 3 },
+  { key: "missie", label: "Missie", hint: "Wat doen jullie elke dag, en waarom?", rijen: 3 },
+  { key: "visie", label: "Visie", hint: "Waar willen jullie over een paar jaar staan?", rijen: 3 },
+  { key: "kernwaarden", label: "Kernwaarden", hint: "Bijv. warm, eerlijk, creatief (scheid met komma's)", rijen: 2 },
+  { key: "toon", label: "Tone of voice", hint: "Hoe praat het merk? Bijv. persoonlijk en luchtig, met af en toe een emoji.", rijen: 3 },
+  { key: "doen", label: "Wel doen", hint: "Eén per regel. Bijv.\nAltijd de jij-vorm gebruiken\nKorte zinnen", rijen: 3 },
+  { key: "nietDoen", label: "Niet doen", hint: "Eén per regel. Bijv.\nGeen vakjargon\nGeen hoofdletters voor nadruk", rijen: 3 },
 ];
 
 const KLEUR_ROLLEN = [
@@ -127,10 +141,14 @@ function rolOpties(rol) {
     .join("");
 }
 
-function paneel(sleutel, titel, inhoud) {
+function aantalContextIngevuld() {
+  return CONTEXT_VELDEN.filter((v) => (stijlgids.context[v.key] || "").trim()).length;
+}
+
+function paneel(sleutel, titel, inhoud, extra = "") {
   return `
     <details class="ed-paneel" data-paneel="${sleutel}" ${dichtePanelen.has(sleutel) ? "" : "open"}>
-      <summary><i data-lucide="chevron-right"></i>${titel}</summary>
+      <summary><i data-lucide="chevron-right"></i>${titel}${extra}</summary>
       <div class="ed-paneel__inhoud">${inhoud}</div>
     </details>
   `;
@@ -143,15 +161,24 @@ function rij(label, veld) {
 function editorPanelen() {
   const s = stijlgids;
 
+  // Merk
   const merk = `
     ${rij("Naam", `<input class="ed-input" type="text" data-veld="naam" value="${esc(s.naam)}">`)}
     ${rij("Slogan", `<input class="ed-input" type="text" data-veld="slogan" value="${esc(s.slogan)}">`)}
-    <label class="ed-rij ed-rij--blok">
-      <span>Intro</span>
-      <textarea class="ed-input" rows="4" data-veld="intro" placeholder="Wie is het merk, wat doen ze, hoe voelt de stijl?">${esc(s.intro)}</textarea>
-    </label>
   `;
 
+  // Over het merk
+  const context = `
+    ${CONTEXT_VELDEN.map((v) => `
+      <label class="ed-rij ed-rij--blok">
+        <span>${v.label}</span>
+        <textarea class="ed-input" rows="${v.rijen}" data-context="${v.key}" placeholder="${esc(v.hint)}">${esc(s.context[v.key])}</textarea>
+      </label>
+    `).join("")}
+    <p class="muted klein">Lege velden komen niet op de website.</p>
+  `;
+
+  // Kleuren
   const kleuren = `
     ${s.kleuren.map((k, i) => `
       <div class="ed-kleur">
@@ -169,13 +196,25 @@ function editorPanelen() {
     ${KLEUR_ROLLEN.map(([rol, label]) => rij(label, `<select class="ed-input" data-rol="${rol}">${rolOpties(rol)}</select>`)).join("")}
   `;
 
+  // Typografie
   const typografie = `
-    ${FONT_VELDEN.map(([rol, label]) => rij(label,
-      `<input class="ed-input" type="text" list="font-suggesties" data-font="${rol}" value="${esc(s.fonts[rol])}">`
-    )).join("")}
-    <p class="muted klein">Gebruik namen van Google Fonts. Een font dat daar niet op staat, zie je alleen als het op je computer is geïnstalleerd.</p>
+    ${s.fonts.map((f, i) => `
+      <div class="ed-font">
+        <select class="ed-input" data-font="${i}" data-eig="rol" aria-label="Rol van dit font">
+          ${Object.entries(FONT_ROLLEN).map(([key, r]) => `<option value="${key}" ${f.rol === key ? "selected" : ""}>${r.label}</option>`).join("")}
+        </select>
+        <input class="ed-input" type="text" list="font-suggesties" data-font="${i}" data-eig="font" value="${esc(f.font)}" placeholder="Naam van het font" aria-label="Font">
+        <button type="button" class="icon-btn" data-font-weg="${i}" aria-label="Font verwijderen"><i data-lucide="x"></i></button>
+        <input class="ed-input ed-font__gebruik" type="text" data-font="${i}" data-eig="gebruik" value="${esc(f.gebruik)}" placeholder="${esc(FONT_ROLLEN[f.rol].gebruik)}" aria-label="Waarvoor gebruik je dit font?">
+      </div>
+    `).join("")}
+    <button type="button" class="btn btn--ghost ed-erbij" data-font-erbij ${s.fonts.length >= 6 ? "disabled" : ""}>
+      <i data-lucide="plus"></i> Font toevoegen
+    </button>
+    <p class="muted klein">Gebruik namen van Google Fonts. Heb je voor een rol geen font, dan gebruikt de site automatisch een van je andere fonts.</p>
   `;
 
+  // Knoppen
   const knoppen = `
     <label class="ed-rij">
       <span>Rondheid</span>
@@ -189,10 +228,15 @@ function editorPanelen() {
     ${rij("Link", `<input class="ed-input" type="text" data-knop="link" value="${esc(s.knoppen.link)}">`)}
   `;
 
+  const contextTeller = `<span class="ed-teller" id="context-teller">${aantalContextIngevuld()}/${CONTEXT_VELDEN.length}</span>`;
+  const fontTeller = `<span class="ed-teller">${s.fonts.length}</span>`;
+  const kleurTeller = `<span class="ed-teller">${s.kleuren.length}</span>`;
+
   return [
     paneel("merk", "Merk", merk),
-    paneel("kleuren", "Kleuren", kleuren),
-    paneel("typografie", "Typografie", typografie),
+    paneel("context", "Over het merk", context, contextTeller),
+    paneel("kleuren", "Kleuren", kleuren, kleurTeller),
+    paneel("typografie", "Typografie", typografie, fontTeller),
     paneel("knoppen", "Knoppen", knoppen),
   ].join("");
 }
@@ -240,7 +284,7 @@ function renderEditor() {
   `;
 }
 
-// Alleen de panelen opnieuw tekenen (bijv. na kleur toevoegen)
+// Alleen de panelen opnieuw tekenen (bijv. na kleur of font toevoegen)
 function hertekenPanelen() {
   const form = document.getElementById("editor-form");
   if (!form) return;
@@ -256,6 +300,12 @@ function verversRolOpties() {
   });
 }
 
+// Eerste rol die nog niet gebruikt wordt
+function vrijeFontRol() {
+  const gebruikt = new Set(stijlgids.fonts.map((f) => f.rol));
+  return Object.keys(FONT_ROLLEN).find((rol) => !gebruikt.has(rol)) || "accent";
+}
+
 // ---------- Invoer ----------
 
 content.addEventListener("input", (e) => {
@@ -264,8 +314,19 @@ content.addEventListener("input", (e) => {
 
   if (el.dataset.veld) {
     stijlgids[el.dataset.veld] = el.value;
-  } else if (el.dataset.font) {
-    stijlgids.fonts[el.dataset.font] = el.value;
+  } else if (el.dataset.context) {
+    stijlgids.context[el.dataset.context] = el.value;
+    const teller = document.getElementById("context-teller");
+    if (teller) teller.textContent = `${aantalContextIngevuld()}/${CONTEXT_VELDEN.length}`;
+  } else if (el.dataset.font !== undefined) {
+    const font = stijlgids.fonts[Number(el.dataset.font)];
+    font[el.dataset.eig] = el.value;
+
+    // Bij een andere rol de voorbeeldtekst van "waarvoor" aanpassen
+    if (el.dataset.eig === "rol") {
+      const gebruikVeld = el.closest(".ed-font").querySelector('[data-eig="gebruik"]');
+      gebruikVeld.placeholder = FONT_ROLLEN[el.value].gebruik;
+    }
   } else if (el.dataset.knop) {
     if (el.dataset.knop === "radius") {
       const waarde = Number(el.value);
@@ -299,6 +360,7 @@ content.addEventListener("input", (e) => {
   verversVoorbeeld();
 });
 
+// Kleurrollen (achtergrond, tekst, hoofdkleur, tweede kleur)
 content.addEventListener("change", (e) => {
   if (modus !== "stijlgids" || !stijlgids) return;
   const select = e.target.closest("[data-rol]");
@@ -311,21 +373,39 @@ content.addEventListener("change", (e) => {
 content.addEventListener("click", (e) => {
   if (modus !== "stijlgids" || !stijlgids) return;
 
+  // Kleur toevoegen
   if (e.target.closest("[data-kleur-erbij]")) {
     if (stijlgids.kleuren.length >= 10) return;
     stijlgids.kleuren.push({ naam: "Nieuwe kleur", hex: "#888888", gebruik: "" });
     return hertekenPanelen();
   }
 
-  const weg = e.target.closest("[data-kleur-weg]");
-  if (weg) {
+  // Kleur verwijderen
+  const kleurWeg = e.target.closest("[data-kleur-weg]");
+  if (kleurWeg) {
     if (stijlgids.kleuren.length <= 2) return toast("Een stijlgids heeft minstens 2 kleuren nodig.", "fout");
-    const i = Number(weg.dataset.kleurWeg);
+    const i = Number(kleurWeg.dataset.kleurWeg);
     stijlgids.kleuren.splice(i, 1);
     for (const rol in stijlgids.rollen) {
       if (stijlgids.rollen[rol] === i) stijlgids.rollen[rol] = 0;
       else if (stijlgids.rollen[rol] > i) stijlgids.rollen[rol]--;
     }
+    return hertekenPanelen();
+  }
+
+  // Font toevoegen
+  if (e.target.closest("[data-font-erbij]")) {
+    if (stijlgids.fonts.length >= 6) return;
+    const rol = vrijeFontRol();
+    stijlgids.fonts.push({ font: FONT_ROLLEN[rol].voorbeeld, rol, gebruik: "" });
+    return hertekenPanelen();
+  }
+
+  // Font verwijderen
+  const fontWeg = e.target.closest("[data-font-weg]");
+  if (fontWeg) {
+    if (stijlgids.fonts.length <= 1) return toast("Een stijlgids heeft minstens 1 font nodig.", "fout");
+    stijlgids.fonts.splice(Number(fontWeg.dataset.fontWeg), 1);
     return hertekenPanelen();
   }
 
@@ -344,7 +424,4 @@ content.addEventListener("toggle", (e) => {
   else dichtePanelen.add(paneelEl.dataset.paneel);
 }, true);
 
-// Waarschuwing als je de pagina sluit met niet-opgeslagen wijzigingen
-window.addEventListener("beforeunload", (e) => {
-  if (stijlgidsGewijzigd) e.preventDefault();
-});
+//
