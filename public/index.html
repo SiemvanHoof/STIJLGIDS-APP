@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Studio Dashboard</title>
+
+  <!-- Font: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Iconen: Lucide -->
+  <script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.min.js"></script>
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div class="app">
+
+    <!-- ZIJBALK -->
+    <aside class="sidebar">
+      <div class="sidebar__logo">
+        <div class="logo-mark"></div>
+        <span>studio</span>
+      </div>
+
+      <div class="sidebar__divider"></div>
+
+      <label class="search">
+        <i data-lucide="search"></i>
+        <input type="text" placeholder="Zoeken" id="search">
+        <kbd>⌘ F</kbd>
+      </label>
+
+      <div class="sidebar__divider"></div>
+
+      <nav class="nav">
+        <a href="#" class="nav__item is-active" data-page="dashboard">
+          <i data-lucide="house"></i> Dashboard
+        </a>
+        <a href="#" class="nav__item" data-page="projecten">
+          <i data-lucide="folder"></i> Projecten
+        </a>
+        <a href="#" class="nav__item" data-page="stijlgidsen">
+          <i data-lucide="palette"></i> Stijlgidsen
+        </a>
+        <a href="#" class="nav__item" data-page="klanten">
+          <i data-lucide="users"></i> Klanten
+        </a>
+        <a href="#" class="nav__item" data-page="instellingen">
+          <i data-lucide="settings"></i> Instellingen
+        </a>
+      </nav>
+    </aside>
+
+    <!-- HOOFDVLAK -->
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar__arrows">
+          <button class="icon-btn" aria-label="Terug"><i data-lucide="chevron-left"></i></button>
+          <button class="icon-btn" aria-label="Vooruit"><i data-lucide="chevron-right"></i></button>
+        </div>
+        <div class="topbar__divider"></div>
+        <h1 class="topbar__title" id="page-title">Dashboard</h1>
+      </header>
+
+      <section class="content" id="content">
+        <!-- Hier komt in stap 2 het dashboard -->
+        <p class="empty">Hier komt straks je dashboard.</p>
+      </section>
+    </main>
+
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>lucide.createIcons();</script>
+</body>
+</html>
