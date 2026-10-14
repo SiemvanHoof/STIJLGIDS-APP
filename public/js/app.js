@@ -24,12 +24,20 @@ const MAPPEN = {
   stijlgids:  { label: "Stijlgids",    icoon: "palette" },
 };
 
+const SORTERINGEN = {
+  bijgewerkt: "Laatst bijgewerkt",
+  deadline: "Deadline",
+  naam: "Naam (A–Z)",
+};
+
 let projecten = [];
 let huidigePagina = "dashboard";
 let openProjectId = null;
 let bestanden = null;
 let zoekterm = "";
-let actiefFilter = "";
+let actiefFilter = "";       // filter op het dashboard
+let projectFilter = "";      // filter op de pagina Projecten
+let sortering = "bijgewerkt";
 let modus = "project"; // "project" of "stijlgids"
 
 const geschiedenis = { terug: [], vooruit: [] };
@@ -236,6 +244,30 @@ async function verwijderBestand(map, naam) {
   }
 }
 
+// ---------- Filteren en sorteren ----------
+
+function gefilterdeProjecten(statusFilter = "") {
+  const term = zoekterm.trim().toLowerCase();
+  return projecten.filter((p) => {
+    const pastStatus = !statusFilter || p.status === statusFilter;
+    const pastZoek = !term || `${p.naam} ${p.klant}`.toLowerCase().includes(term);
+    return pastStatus && pastZoek;
+  });
+}
+
+function sorteer(lijst) {
+  const kopie = [...lijst];
+  if (sortering === "deadline") {
+    // Projecten zonder deadline achteraan
+    kopie.sort((a, b) => (a.deadline || "9999").localeCompare(b.deadline || "9999"));
+  } else if (sortering === "naam") {
+    kopie.sort((a, b) => a.naam.localeCompare(b.naam, "nl"));
+  } else {
+    kopie.sort((a, b) => (b.bijgewerkt || "").localeCompare(a.bijgewerkt || ""));
+  }
+  return kopie;
+}
+
 // ---------- Onderdelen ----------
 
 function statKaart({ label, waarde, icoon, regelLabel, regelWaarde, kleur, filter }) {
@@ -253,7 +285,7 @@ function statKaart({ label, waarde, icoon, regelLabel, regelWaarde, kleur, filte
         <span>${regelLabel}</span>
         <strong class="text--${kleur}">${regelWaarde}</strong>
       </div>
-      <button class="stat__link" data-filter="${filter}">
+      <button class="stat__link" data-naar-projecten="${filter}">
         Bekijk projecten <i data-lucide="arrow-right"></i>
       </button>
     </article>
@@ -274,6 +306,11 @@ function statusSelect(project) {
       <i data-lucide="chevron-down"></i>
     </label>
   `;
+}
+
+function statusPil(project) {
+  const s = STATUS[project.status];
+  return `<span class="status-pil status-pil--${s.kleur}"><span class="dot dot--${s.kleur}"></span>${s.label}</span>`;
 }
 
 function deadlineTekst(project) {
@@ -308,13 +345,68 @@ function projectRij(project) {
   `;
 }
 
-function gefilterdeProjecten(statusFilter = "") {
-  const term = zoekterm.trim().toLowerCase();
-  return projecten.filter((p) => {
-    const pastStatus = !statusFilter || p.status === statusFilter;
-    const pastZoek = !term || `${p.naam} ${p.klant}`.toLowerCase().includes(term);
-    return pastStatus && pastZoek;
-  });
+// Plaatje bovenaan een kaart: de cover, of een gekleurd vlak als er nog geen is
+function kaartBeeld(project, attributen) {
+  const kleur = project.stijl?.hoofd || "#E6E6E6";
+  const inhoud = project.cover
+    ? `<img src="${esc(project.cover)}" alt="" loading="lazy">`
+    : `<span class="kaart-beeld__leeg" style="background:${esc(kleur)}"><i data-lucide="image"></i></span>`;
+  return `<button class="kaart-beeld" ${attributen} aria-label="Open ${esc(project.naam)}">${inhoud}</button>`;
+}
+
+function projectKaart(project) {
+  return `
+    <article class="pkaart">
+      ${kaartBeeld(project, `data-project="${esc(project.id)}"`)}
+      <div class="pkaart__body">
+        <p class="project__meta">${esc(project.klant || "Geen klant")}</p>
+        <button class="pkaart__naam" data-project="${esc(project.id)}">${esc(project.naam)}</button>
+        <div class="pkaart__voet">
+          ${statusPil(project)}
+          <span class="klein">${deadlineTekst(project)}</span>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function stijlgidsKaart(project) {
+  const s = project.stijl;
+  const id = esc(project.id);
+
+  return `
+    <article class="skaart">
+      ${kaartBeeld(project, `data-stijlgids-voor="${id}"`)}
+      <div class="skaart__body">
+        <div>
+          <h3 class="skaart__naam">${esc(project.naam)}</h3>
+          ${s.slogan ? `<p class="muted klein skaart__slogan">${esc(s.slogan)}</p>` : ""}
+        </div>
+
+        <div class="palet-mini" aria-label="Kleuren">
+          ${s.kleuren.map((hex) => `<span style="background:${esc(hex)}" title="${esc(hex)}"></span>`).join("")}
+        </div>
+
+        <p class="skaart__fonts">
+          <i data-lucide="type"></i>
+          <span>${s.fonts.map(esc).join(" · ")}</span>
+        </p>
+
+        <div class="skaart__acties">
+          <a class="btn btn--ghost" href="/projecten/${id}/site/index.html" target="_blank" rel="noopener">
+            <i data-lucide="external-link"></i> Website
+          </a>
+          ${s.pdf ? `
+          <a class="btn btn--ghost" href="${esc(s.pdf)}" target="_blank" rel="noopener">
+            <i data-lucide="file-text"></i> PDF
+          </a>` : ""}
+          <button class="btn btn--primary" data-stijlgids-voor="${id}">
+            <i data-lucide="pencil-ruler"></i> Bewerken
+          </button>
+        </div>
+      </div>
+    </article>
+  `;
 }
 
 function bestandKaart(map, bestand) {
@@ -367,6 +459,17 @@ function mapPaneel(key, map) {
   `;
 }
 
+function legeStaat(icoon, titelTekst, uitleg, knop = "") {
+  return `
+    <div class="leeg">
+      <div class="icon-tile"><i data-lucide="${icoon}"></i></div>
+      <p><strong>${titelTekst}</strong></p>
+      <p class="muted">${uitleg}</p>
+      ${knop}
+    </div>
+  `;
+}
+
 // ---------- Pagina's ----------
 
 function renderDashboard() {
@@ -413,13 +516,73 @@ function renderDashboard() {
       <div class="project-lijst">
         ${lijst.length
           ? lijst.map(projectRij).join("")
-          : `<div class="leeg">
-               <div class="icon-tile"><i data-lucide="folder-plus"></i></div>
-               <p><strong>${projecten.length ? "Geen projecten gevonden" : "Nog geen projecten"}</strong></p>
-               <p class="muted">${projecten.length ? "Probeer een andere zoekterm of filter." : "Maak je eerste project aan. Er wordt meteen een map voor aangemaakt."}</p>
-             </div>`}
+          : legeStaat(
+              "folder-plus",
+              projecten.length ? "Geen projecten gevonden" : "Nog geen projecten",
+              projecten.length ? "Probeer een andere zoekterm of filter." : "Maak je eerste project aan. Er wordt meteen een map voor aangemaakt."
+            )}
       </div>
     </section>
+  `;
+}
+
+function renderProjecten() {
+  const lijst = sorteer(gefilterdeProjecten(projectFilter));
+
+  const chips = [["", "Alle", projecten.length], ...Object.entries(STATUS).map(([key, s]) => [key, s.label, tel(key)])]
+    .map(([key, label, aantal]) => `
+      <button class="fchip ${projectFilter === key ? "is-actief" : ""}" data-pfilter="${key}">
+        ${key ? `<span class="dot dot--${STATUS[key].kleur}"></span>` : ""}
+        ${label}
+        <span class="fchip__aantal">${aantal}</span>
+      </button>`)
+    .join("");
+
+  const sorteerOpties = Object.entries(SORTERINGEN)
+    .map(([key, label]) => `<option value="${key}" ${sortering === key ? "selected" : ""}>${label}</option>`)
+    .join("");
+
+  content.innerHTML = `
+    <div class="toolbar">
+      <div class="filter-chips">${chips}</div>
+      <div class="toolbar__rechts">
+        <label class="select-klein">
+          <i data-lucide="arrow-up-down"></i>
+          <select id="sortering" aria-label="Sorteren">${sorteerOpties}</select>
+        </label>
+        <button class="btn btn--primary" id="nieuw-project">
+          <i data-lucide="plus"></i> Nieuw project
+        </button>
+      </div>
+    </div>
+
+    ${lijst.length
+      ? `<div class="kaart-grid">${lijst.map(projectKaart).join("")}</div>`
+      : `<section class="panel">${legeStaat(
+          "folder-search",
+          projecten.length ? "Geen projecten gevonden" : "Nog geen projecten",
+          projecten.length ? "Probeer een andere zoekterm of filter." : "Klik op Nieuw project om te beginnen."
+        )}</section>`}
+  `;
+}
+
+function renderStijlgidsen() {
+  const term = zoekterm.trim().toLowerCase();
+  const metStijl = sorteer(projecten.filter((p) => p.stijl))
+    .filter((p) => !term || `${p.naam} ${p.klant} ${p.stijl.fonts.join(" ")}`.toLowerCase().includes(term));
+
+  content.innerHTML = `
+    <div class="toolbar">
+      <p class="muted">${metStijl.length} ${metStijl.length === 1 ? "stijlgids" : "stijlgidsen"}</p>
+    </div>
+
+    ${metStijl.length
+      ? `<div class="kaart-grid kaart-grid--breed">${metStijl.map(stijlgidsKaart).join("")}</div>`
+      : `<section class="panel">${legeStaat(
+          "palette",
+          term ? "Geen stijlgidsen gevonden" : "Nog geen stijlgidsen",
+          term ? "Probeer een andere zoekterm." : "Elk nieuw project krijgt automatisch een stijlgids. Open een project en klik op Stijlgids bewerken."
+        )}</section>`}
   `;
 }
 
@@ -427,14 +590,11 @@ function renderProject() {
   const p = projecten.find((x) => x.id === openProjectId);
 
   if (!p) {
-    content.innerHTML = `
-      <section class="panel">
-        <div class="leeg">
-          <div class="icon-tile"><i data-lucide="folder-x"></i></div>
-          <p><strong>Project niet gevonden</strong></p>
-          <p class="muted">Misschien is de map verplaatst of hernoemd.</p>
-        </div>
-      </section>`;
+    content.innerHTML = `<section class="panel">${legeStaat(
+      "folder-x",
+      "Project niet gevonden",
+      "Misschien is de map verplaatst of hernoemd."
+    )}</section>`;
     return;
   }
 
@@ -510,15 +670,11 @@ function renderProject() {
 }
 
 function renderBinnenkort(naam) {
-  content.innerHTML = `
-    <section class="panel">
-      <div class="leeg">
-        <div class="icon-tile"><i data-lucide="hammer"></i></div>
-        <p><strong>${naam}</strong></p>
-        <p class="muted">Deze pagina bouwen we in een volgende stap.</p>
-      </div>
-    </section>
-  `;
+  content.innerHTML = `<section class="panel">${legeStaat(
+    "hammer",
+    naam,
+    "Deze pagina bouwen we in een volgende stap."
+  )}</section>`;
 }
 
 function render() {
@@ -532,6 +688,8 @@ function render() {
   } else {
     titel.textContent = PAGINAS[huidigePagina];
     if (huidigePagina === "dashboard") renderDashboard();
+    else if (huidigePagina === "projecten") renderProjecten();
+    else if (huidigePagina === "stijlgidsen") renderStijlgidsen();
     else renderBinnenkort(PAGINAS[huidigePagina]);
   }
 
@@ -634,6 +792,8 @@ function openProjectFormulier(project = null) {
         const nieuw = await api("/api/projecten", { method: "POST", body: JSON.stringify(data) });
         projecten.unshift(nieuw);
         toast(`"${nieuw.naam}" aangemaakt`);
+        // De PNG-cover wordt op de achtergrond gemaakt: even later opnieuw ophalen
+        setTimeout(laadProjecten, 5000);
       }
       sluit();
       render();
@@ -656,6 +816,7 @@ document.querySelectorAll(".nav__item").forEach((item) => {
 
 // Alle knoppen in de inhoud
 content.addEventListener("click", (e) => {
+  // Filter op het dashboard
   const filterKnop = e.target.closest("[data-filter]");
   if (filterKnop) {
     actiefFilter = filterKnop.dataset.filter;
@@ -663,8 +824,28 @@ content.addEventListener("click", (e) => {
     return;
   }
 
+  // "Bekijk projecten" op een stat-kaart → pagina Projecten met dat filter
+  const naarProjecten = e.target.closest("[data-naar-projecten]");
+  if (naarProjecten) {
+    projectFilter = naarProjecten.dataset.naarProjecten;
+    return gaNaar("projecten");
+  }
+
+  // Filter op de pagina Projecten
+  const pfilter = e.target.closest("[data-pfilter]");
+  if (pfilter) {
+    projectFilter = pfilter.dataset.pfilter;
+    render();
+    return;
+  }
+
   const projectKnop = e.target.closest("[data-project]");
   if (projectKnop) return gaNaar(huidigePagina, projectKnop.dataset.project);
+
+  const stijlgidsKnop = e.target.closest("[data-stijlgids-voor]");
+  if (stijlgidsKnop) {
+    return gaNaar(huidigePagina, stijlgidsKnop.dataset.stijlgidsVoor, { nieuweModus: "stijlgids" });
+  }
 
   const navKnop = e.target.closest("[data-nav]");
   if (navKnop) return gaNaar(navKnop.dataset.nav);
@@ -705,6 +886,11 @@ content.addEventListener("change", (e) => {
   const select = e.target.closest("[data-status-voor]");
   if (select) return wijzigStatus(select.dataset.statusVoor, select.value);
 
+  if (e.target.id === "sortering") {
+    sortering = e.target.value;
+    return render();
+  }
+
   if (e.target.id === "upload-input") {
     uploadBestanden(e.target.files);
     e.target.value = "";
@@ -732,11 +918,11 @@ content.addEventListener("drop", (e) => {
   uploadBestanden(e.dataTransfer.files);
 });
 
-// Zoeken
+// Zoeken: werkt op Dashboard, Projecten en Stijlgidsen
 zoekveld.addEventListener("input", () => {
   zoekterm = zoekveld.value;
-  if (openProjectId) gaNaar("dashboard");
-  else if (huidigePagina === "dashboard") render();
+  if (openProjectId) gaNaar("projecten");
+  else if (["dashboard", "projecten", "stijlgidsen"].includes(huidigePagina)) render();
 });
 
 document.addEventListener("keydown", (e) => {

@@ -574,6 +574,22 @@ summary:focus-visible {
   pointer-events: none;
 }
 
+/* Status als pilletje (op de projectkaarten) */
+.status-pil {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+.status-pil--green { background: #EAF8EF; color: #15803D; border-color: #D5F0DE; }
+.status-pil--blue { background: #EBF2FE; color: #1D4ED8; border-color: #D6E4FD; }
+.status-pil--yellow { background: #FEF8E1; color: #A16207; border-color: #FBEFC0; }
+.status-pil--red { background: var(--red-soft); color: #B91C1C; border-color: #FAD7D8; }
+
 /* Lege staat */
 .leeg {
   display: flex;
@@ -1123,7 +1139,240 @@ textarea.ed-input { resize: vertical; line-height: 1.5; }
 }
 
 /* =========================================
-   15. ANIMATIES
+   15. PAGINA'S PROJECTEN EN STIJLGIDSEN
+   ========================================= */
+
+/* Balk met filters en knoppen */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.toolbar__rechts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-white);
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: border-color 0.15s, color 0.15s;
+}
+.fchip:hover { color: var(--text); border-color: #C4C4C4; }
+.fchip.is-actief {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg-white);
+}
+
+.fchip__aantal {
+  font-size: 12px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fchip.is-actief .fchip__aantal {
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--bg-white);
+}
+
+/* Kleine dropdown (sorteren) */
+.select-klein {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-white);
+  color: var(--text-muted);
+}
+.select-klein [data-lucide], .select-klein .lucide {
+  position: absolute;
+  left: 10px;
+  width: 15px;
+  height: 15px;
+  pointer-events: none;
+}
+.select-klein select {
+  appearance: none;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--text);
+  padding: 8px 12px 8px 32px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+/* Raster met kaarten */
+.kaart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.kaart-grid--breed {
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+}
+
+/* Plaatje bovenaan een kaart */
+.kaart-beeld {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 1200 / 630;
+  overflow: hidden;
+  background: var(--bg-main);
+  border-bottom: 1px solid var(--border);
+}
+.kaart-beeld img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+.kaart-beeld:hover img { transform: scale(1.03); }
+
+.kaart-beeld__leeg {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: rgba(255, 255, 255, 0.7);
+}
+.kaart-beeld__leeg [data-lucide], .kaart-beeld__leeg .lucide { width: 28px; height: 28px; }
+
+/* Projectkaart */
+.pkaart {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-width: 0;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.pkaart:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 8px 24px -14px rgba(0, 0, 0, 0.25);
+}
+
+.pkaart__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px 16px;
+  flex: 1;
+}
+
+.pkaart__naam {
+  font-size: 16px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pkaart__naam:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.pkaart__voet {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Stijlgidskaart */
+.skaart {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.skaart__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  flex: 1;
+}
+
+.skaart__naam {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.skaart__slogan {
+  margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.palet-mini {
+  display: flex;
+  height: 22px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.palet-mini span { flex: 1; }
+
+.skaart__fonts {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.skaart__fonts [data-lucide], .skaart__fonts .lucide {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+}
+
+.skaart__acties {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+.skaart__acties .btn--primary { margin-left: auto; }
+
+/* =========================================
+   16. ANIMATIES
    ========================================= */
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
@@ -1134,7 +1383,7 @@ textarea.ed-input { resize: vertical; line-height: 1.5; }
 }
 
 /* =========================================
-   16. MOBIEL (inhoud)
+   17. MOBIEL (inhoud)
    ========================================= */
 @media (max-width: 980px) {
   .editor { grid-template-columns: 1fr; }
@@ -1167,5 +1416,16 @@ textarea.ed-input { resize: vertical; line-height: 1.5; }
   }
   .ed-font select {
     grid-column: 1 / -1;
+  }
+  .kaart-grid,
+  .kaart-grid--breed {
+    grid-template-columns: 1fr;
+  }
+  .toolbar__rechts {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .skaart__acties .btn--primary {
+    margin-left: 0;
   }
 }

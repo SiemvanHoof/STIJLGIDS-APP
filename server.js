@@ -50,11 +50,51 @@ async function leesProject(id) {
 }
 
 async function schrijfProject(id, data) {
-  const { id: _, ...opslaan } = data; // id niet dubbel opslaan
+  // id, cover en stijl worden niet opgeslagen, die rekenen we elke keer opnieuw uit
+  const { id: _, cover, stijl, ...opslaan } = data;
   await fs.writeFile(
     path.join(projectPad(id), "project.json"),
     JSON.stringify(opslaan, null, 2)
   );
+}
+
+// Cover en een korte samenvatting van de stijlgids (voor de kaarten en de galerij)
+async function projectExtra(id) {
+  const map = projectPad(id);
+  const extra = { cover: null, stijl: null };
+
+  for (const naam of ["cover.png", "cover.svg"]) {
+    try {
+      const info = await fs.stat(path.join(map, "images", naam));
+      extra.cover = `/projecten/${path.basename(map)}/images/${naam}?v=${Math.round(info.mtimeMs)}`;
+      break;
+    } catch {
+      // bestaat niet, probeer de volgende
+    }
+  }
+
+  try {
+    const tekst = await fs.readFile(path.join(map, "stijlgids", "stijlgids.json"), "utf8");
+    const d = normaliseer(JSON.parse(tekst));
+    let pdf = null;
+    try {
+      const info = await fs.stat(path.join(map, "documenten", "stijlgids.pdf"));
+      pdf = `/projecten/${path.basename(map)}/documenten/stijlgids.pdf?v=${Math.round(info.mtimeMs)}`;
+    } catch {
+      // nog geen PDF
+    }
+    extra.stijl = {
+      slogan: d.slogan,
+      kleuren: d.kleuren.map((k) => k.hex),
+      hoofd: d.kleuren[d.rollen.hoofd].hex,
+      fonts: d.fonts.map((f) => f.font),
+      pdf,
+    };
+  } catch {
+    // nog geen stijlgids
+  }
+
+  return extra;
 }
 
 // In welke submap komt een geüpload bestand?
@@ -65,7 +105,7 @@ function kiesSubmap(bestand) {
 
 // ---------- API: projecten ----------
 
-// Alle projecten ophalen
+// Alle projecten ophalen (met cover en stijlgids-samenvatting)
 app.get("/api/projecten", async (req, res) => {
   await fs.mkdir(PROJECTEN_MAP, { recursive: true });
   const items = await fs.readdir(PROJECTEN_MAP, { withFileTypes: true });
@@ -74,7 +114,8 @@ app.get("/api/projecten", async (req, res) => {
   for (const item of items) {
     if (!item.isDirectory()) continue;
     try {
-      projecten.push(await leesProject(item.name));
+      const project = await leesProject(item.name);
+      projecten.push({ ...project, ...(await projectExtra(item.name)) });
     } catch {
       // map zonder geldige project.json overslaan
     }
@@ -86,7 +127,8 @@ app.get("/api/projecten", async (req, res) => {
 
 // Eén project ophalen
 app.get("/api/projecten/:id", async (req, res) => {
-  res.json(await leesProject(req.params.id));
+  const project = await leesProject(req.params.id);
+  res.json({ ...project, ...(await projectExtra(req.params.id)) });
 });
 
 // Nieuw project aanmaken (mappen + standaard stijlgids + PDF/PNG's)
@@ -121,7 +163,7 @@ app.post("/api/projecten", async (req, res) => {
   // PDF en PNG's op de achtergrond maken, zodat je niet hoeft te wachten
   maakExports(map, stijl).catch((fout) => console.error("Export mislukt:", fout.message));
 
-  res.status(201).json({ ...project, id });
+  res.status(201).json({ ...project, id, ...(await projectExtra(id)) });
 });
 
 // Project aanpassen (bijv. de status)
@@ -139,7 +181,7 @@ app.patch("/api/projecten/:id", async (req, res) => {
 
   project.bijgewerkt = new Date().toISOString();
   await schrijfProject(req.params.id, project);
-  res.json(project);
+  res.json({ ...project, ...(await projectExtra(req.params.id)) });
 });
 
 // ---------- API: bestanden ----------
