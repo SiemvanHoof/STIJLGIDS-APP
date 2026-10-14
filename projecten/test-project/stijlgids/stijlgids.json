@@ -1,7 +1,16 @@
 {
   "naam": "Test Project",
   "slogan": "Een korte zin over wat dit merk doet.",
-  "intro": "",
+  "context": {
+    "over": "t",
+    "doelgroep": "t",
+    "missie": "t",
+    "visie": "t",
+    "kernwaarden": "t",
+    "toon": "t",
+    "doen": "t",
+    "nietDoen": "t3et"
+  },
   "kleuren": [
     {
       "naam": "Hoofdkleur",
@@ -30,13 +39,28 @@
     "hoofd": 0,
     "tweede": 2
   },
-  "fonts": {
-    "koppen": "Bodoni Moda",
-    "sier": "Pinyon Script",
-    "tekst": "Courier Prime",
-    "logo": "Montserrat",
-    "hand": "Homemade Apple"
-  },
+  "fonts": [
+    {
+      "font": "Bodoni Moda",
+      "rol": "koppen",
+      "gebruik": ""
+    },
+    {
+      "font": "Pinyon Script",
+      "rol": "sier",
+      "gebruik": ""
+    },
+    {
+      "font": "Courier Prime",
+      "rol": "tekst",
+      "gebruik": ""
+    },
+    {
+      "font": "Montserrat",
+      "rol": "logo",
+      "gebruik": ""
+    }
+  ],
   "knoppen": {
     "radius": 999,
     "primair": "Neem contact op",

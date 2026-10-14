@@ -1,6 +1,6 @@
 /* Test Project — stijlgids
    Gemaakt met Studio Dashboard. Pas de stijlgids aan in de app, niet in dit bestand. */
-@import url("https://fonts.googleapis.com/css2?family=Bodoni+Moda&family=Pinyon+Script&family=Courier+Prime&family=Montserrat&family=Homemade+Apple&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Bodoni+Moda&family=Pinyon+Script&family=Courier+Prime&family=Montserrat&display=swap");
 
 :root {
   /* Kleuren */
@@ -22,10 +22,11 @@
 
   /* Fonts */
   --font-koppen: "Bodoni Moda", Georgia, 'Times New Roman', serif;
-  --font-sier: "Pinyon Script", 'Brush Script MT', cursive;
   --font-tekst: "Courier Prime", system-ui, -apple-system, sans-serif;
+  --font-sier: "Pinyon Script", cursive;
   --font-logo: "Montserrat", 'Helvetica Neue', Arial, sans-serif;
-  --font-hand: "Homemade Apple", 'Segoe Print', cursive;
+  --font-hand: "Courier Prime", cursive;
+  --font-accent: "Bodoni Moda", Georgia, serif;
 
   /* Knoppen */
   --knop-radius: 999px;

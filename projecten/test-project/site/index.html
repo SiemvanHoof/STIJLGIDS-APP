@@ -13,8 +13,6 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime&amp;display=swap">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&amp;display=swap">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat&amp;display=swap">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Homemade+Apple:wght@400;700&amp;display=swap">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Homemade+Apple&amp;display=swap">
   <style>
 /* Test Project — stijlgids
    Gemaakt met Studio Dashboard. Pas de stijlgids aan in de app, niet in dit bestand. */
@@ -39,10 +37,11 @@
 
   /* Fonts */
   --font-koppen: "Bodoni Moda", Georgia, 'Times New Roman', serif;
-  --font-sier: "Pinyon Script", 'Brush Script MT', cursive;
   --font-tekst: "Courier Prime", system-ui, -apple-system, sans-serif;
+  --font-sier: "Pinyon Script", cursive;
   --font-logo: "Montserrat", 'Helvetica Neue', Arial, sans-serif;
-  --font-hand: "Homemade Apple", 'Segoe Print', cursive;
+  --font-hand: "Courier Prime", cursive;
+  --font-accent: "Bodoni Moda", Georgia, serif;
 
   /* Knoppen */
   --knop-radius: 999px;
@@ -140,6 +139,43 @@ h3 { font-family: var(--font-koppen); font-weight: 500; font-size: 26px; line-he
 .lead { max-width: 62ch; font-size: 17px; }
 .notitie { font-family: var(--font-hand); color: var(--hoofd); font-size: 20px; margin-bottom: 8px; }
 
+/* Twee kolommen (missie & visie, wel & niet doen) */
+.twee-kolom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  margin-top: 8px;
+}
+.twee-kolom > div + div {
+  border-left: 1px solid var(--lijn);
+  padding-left: 40px;
+}
+.twee-kolom h3 { margin-bottom: 12px; }
+.twee-kolom p { color: var(--gedempt); max-width: 50ch; }
+
+/* Kernwaarden */
+.waarden {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.waarden li {
+  font-family: var(--font-koppen);
+  font-size: clamp(22px, 3vw, 32px);
+  line-height: 1.2;
+  padding: 10px 26px;
+  border: 1px solid var(--lijn);
+  border-radius: 999px;
+  background: var(--vlak);
+}
+
+/* Wel en niet doen */
+.doen, .niet { list-style: none; display: grid; gap: 10px; }
+.doen li, .niet li { display: flex; gap: 12px; }
+.doen li::before { content: "✓"; color: var(--hoofd); font-weight: 700; }
+.niet li::before { content: "✕"; color: var(--gedempt); font-weight: 700; }
+
 /* Kleuren */
 .palet {
   display: flex;
@@ -173,7 +209,7 @@ h3 { font-family: var(--font-koppen); font-weight: 500; font-size: 26px; line-he
 .kleur-lijst code { font-size: 12px; color: var(--gedempt); }
 .stip { width: 20px; height: 20px; flex: none; margin-top: 3px; border-radius: 50%; border: 1px solid var(--lijn); }
 
-/* Typografie */
+/* Typografie: elke kaart een eigen rand, dus nooit een lege cel */
 .voorbeeldkop {
   font-family: var(--font-koppen);
   font-size: clamp(40px, 6vw, 72px);
@@ -183,14 +219,19 @@ h3 { font-family: var(--font-koppen); font-weight: 500; font-size: 26px; line-he
 .voorbeeldkop .sier { font-size: 1.35em; line-height: 0.6; }
 .fonts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 1px;
-  background: var(--lijn);
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.font {
+  background: var(--vlak);
   border: 1px solid var(--lijn);
   border-radius: 6px;
-  overflow: hidden;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
-.font { background: var(--vlak); padding: 28px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .font__gebruik { color: var(--gedempt); font-size: 14px; }
 .font__aa { font-size: 96px; line-height: 1.1; margin: 16px 0 8px; }
 .font__abc { font-size: 15px; line-height: 1.5; color: var(--gedempt); overflow-wrap: anywhere; }
@@ -238,17 +279,65 @@ footer {
   .cover__vormen { height: 200px; order: -1; }
   .palet { flex-direction: column; }
   .palet > div { min-height: 84px; }
+  .twee-kolom { grid-template-columns: 1fr; }
+  .twee-kolom > div + div {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--lijn);
+    padding-top: 24px;
+  }
 }
 
-/* PDF */
+/* =========================================
+   PDF (A4)
+   ========================================= */
 @page { size: A4; margin: 0; }
 
 @media print {
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  main { gap: 64px; padding-top: 56px; padding-bottom: 56px; }
-  .palet, .font, .knoppen, .kleur-lijst li, .regels, pre { break-inside: avoid; }
-  h2, .label { break-after: avoid; }
-  pre { white-space: pre-wrap; word-break: break-all; }
+
+  .cover { min-height: 340px; }
+
+  /* Geen flex-gap in print: elke sectie regelt zijn eigen ruimte */
+  main {
+    display: block;
+    max-width: none;
+    padding: 0 48px;
+  }
+  main > section {
+    padding-top: 48px;
+    padding-bottom: 8px;
+  }
+
+  /* Grote onderdelen beginnen op een nieuwe pagina, zoals losse borden */
+  main > section.nieuwe-pagina {
+    break-before: page;
+    padding-top: 56px;
+  }
+
+  /* De code is alleen nuttig op de website */
+  main > section.alleen-scherm { display: none; }
+
+  /* Nooit doormidden knippen */
+  .palet, .kleur-lijst li, .font, .knoppen, .regels,
+  .twee-kolom, .twee-kolom > div, .waarden, .doen li, .niet li {
+    break-inside: avoid;
+  }
+  h2, h3, .label, .notitie, .voorbeeldkop { break-after: avoid; }
+  p { orphans: 3; widows: 3; }
+
+  /* Fonts compacter, altijd 2 kolommen */
+  .voorbeeldkop { margin-bottom: 24px; }
+  .fonts { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .font { padding: 20px; }
+  .font__aa { font-size: 64px; margin: 8px 0 4px; }
+  .font__abc { font-size: 12px; }
+
+  footer {
+    margin-top: 48px;
+    padding: 20px 48px;
+    break-inside: avoid;
+  }
 }
 
   </style>
@@ -279,15 +368,36 @@ footer {
   </header>
 
   <main>
-
+    
     <section>
       <p class="label">Stijlgids</p>
-      <p class="notitie">Hey there!</p>
-      <h2>Test Project</h2>
       
+      <h2>Test Project</h2>
+      <p class="lead">t</p>
+    </section>
+    
+    <section>
+      <p class="label">Doelgroep</p>
+      <h2>Voor wie</h2>
+      <p class="lead">t</p>
+    </section>
+    
+    <section>
+      <p class="label">Missie &amp; visie</p>
+      <h2>Waar we voor staan</h2>
+      <div class="twee-kolom">
+        <div><h3>Missie</h3><p>t</p></div>
+        <div><h3>Visie</h3><p>t</p></div>
+      </div>
+    </section>
+    
+    <section>
+      <p class="label">Kernwaarden</p>
+      <h2>Kernwaarden</h2>
+      <ul class="waarden"><li>t</li></ul>
     </section>
 
-    <section>
+    <section class="nieuwe-pagina">
       <p class="label">Kleuren</p>
       <h2>Kleurenpalet</h2>
       <div class="palet">
@@ -344,7 +454,7 @@ footer {
       </ul>
     </section>
 
-    <section>
+    <section class="nieuwe-pagina">
       <p class="label">Typografie</p>
       <p class="voorbeeldkop"><span class="sier">T</span>est Project</p>
       <div class="fonts">
@@ -352,41 +462,34 @@ footer {
           <p class="label">Koppen</p>
           <h3>Bodoni Moda</h3>
           <p class="font__gebruik">Titels en grote koppen.</p>
-          <p class="font__aa" style="font-family:var(--font-koppen)">Aa</p>
-          <p class="font__abc" style="font-family:var(--font-koppen)">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 &amp;!?</p>
+          <p class="font__aa" style="font-family:&quot;Bodoni Moda&quot;, Georgia, &#39;Times New Roman&#39;, serif">Aa</p>
+          <p class="font__abc" style="font-family:&quot;Bodoni Moda&quot;, Georgia, &#39;Times New Roman&#39;, serif">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 &amp;!?</p>
         </article>
         <article class="font">
           <p class="label">Sierletter</p>
           <h3>Pinyon Script</h3>
           <p class="font__gebruik">Eén beginletter in een kop, nooit hele zinnen.</p>
-          <p class="font__aa" style="font-family:var(--font-sier)">Aa</p>
-          <p class="font__abc" style="font-family:var(--font-sier)">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 &amp;!?</p>
+          <p class="font__aa" style="font-family:&quot;Pinyon Script&quot;, cursive">Aa</p>
+          <p class="font__abc" style="font-family:&quot;Pinyon Script&quot;, cursive">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 &amp;!?</p>
         </article>
         <article class="font">
           <p class="label">Lopende tekst</p>
           <h3>Courier Prime</h3>
-          <p class="font__gebruik">Alinea's, knoppen en labels.</p>
-          <p class="font__aa" style="font-family:var(--font-tekst)">Aa</p>
-          <p class="font__abc" style="font-family:var(--font-tekst)">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 &amp;!?</p>
+          <p class="font__gebruik">Alinea&#39;s, knoppen en labels.</p>
+          <p class="font__aa" style="font-family:&quot;Courier Prime&quot;, system-ui, -apple-system, sans-serif">Aa</p>
+          <p class="font__abc" style="font-family:&quot;Courier Prime&quot;, system-ui, -apple-system, sans-serif">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 &amp;!?</p>
         </article>
         <article class="font">
           <p class="label">Logo</p>
           <h3>Montserrat</h3>
           <p class="font__gebruik">Het logo en korte labels in hoofdletters.</p>
-          <p class="font__aa" style="font-family:var(--font-logo)">Aa</p>
-          <p class="font__abc" style="font-family:var(--font-logo)">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 &amp;!?</p>
-        </article>
-        <article class="font">
-          <p class="label">Handschrift</p>
-          <h3>Homemade Apple</h3>
-          <p class="font__gebruik">Korte, persoonlijke notities.</p>
-          <p class="font__aa" style="font-family:var(--font-hand)">Aa</p>
-          <p class="font__abc" style="font-family:var(--font-hand)">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 &amp;!?</p>
+          <p class="font__aa" style="font-family:&quot;Montserrat&quot;, &#39;Helvetica Neue&#39;, Arial, sans-serif">Aa</p>
+          <p class="font__abc" style="font-family:&quot;Montserrat&quot;, &#39;Helvetica Neue&#39;, Arial, sans-serif">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz<br>0123456789 &amp;!?</p>
         </article>
       </div>
     </section>
 
-    <section>
+    <section class="nieuwe-pagina">
       <p class="label">Knoppen</p>
       <h2>Knoppen</h2>
       <div class="knoppen">
@@ -402,14 +505,26 @@ footer {
       </ul>
     </section>
 
-    <section>
+    
+    <section class="nieuwe-pagina">
+      <p class="label">Tone of voice</p>
+      <h2>Hoe we praten</h2>
+      <p class="lead" style="margin-bottom:32px">t</p>
+      
+      <div class="twee-kolom">
+        <div><h3>Wel doen</h3><ul class="doen"><li>t</li></ul></div>
+        <div><h3>Niet doen</h3><ul class="niet"><li>t3et</li></ul></div>
+      </div>
+    </section>
+
+    <section class="alleen-scherm">
       <p class="label">Voor de website</p>
       <h2>Code</h2>
       <p class="lead" style="margin-bottom:20px">Zet de fonts-link in de &lt;head&gt; en gebruik de variabelen uit <code>stijlgids/variabelen.css</code>.</p>
-      <pre><code>&lt;link rel=&quot;stylesheet&quot; href=&quot;https://fonts.googleapis.com/css2?family=Bodoni+Moda&amp;family=Pinyon+Script&amp;family=Courier+Prime&amp;family=Montserrat&amp;family=Homemade+Apple&amp;display=swap&quot;&gt;</code></pre>
+      <pre><code>&lt;link rel=&quot;stylesheet&quot; href=&quot;https://fonts.googleapis.com/css2?family=Bodoni+Moda&amp;family=Pinyon+Script&amp;family=Courier+Prime&amp;family=Montserrat&amp;display=swap&quot;&gt;</code></pre>
       <pre><code>/* Test Project — stijlgids
    Gemaakt met Studio Dashboard. Pas de stijlgids aan in de app, niet in dit bestand. */
-@import url(&quot;https://fonts.googleapis.com/css2?family=Bodoni+Moda&amp;family=Pinyon+Script&amp;family=Courier+Prime&amp;family=Montserrat&amp;family=Homemade+Apple&amp;display=swap&quot;);
+@import url(&quot;https://fonts.googleapis.com/css2?family=Bodoni+Moda&amp;family=Pinyon+Script&amp;family=Courier+Prime&amp;family=Montserrat&amp;display=swap&quot;);
 
 :root {
   /* Kleuren */
@@ -431,10 +546,11 @@ footer {
 
   /* Fonts */
   --font-koppen: &quot;Bodoni Moda&quot;, Georgia, &#39;Times New Roman&#39;, serif;
-  --font-sier: &quot;Pinyon Script&quot;, &#39;Brush Script MT&#39;, cursive;
   --font-tekst: &quot;Courier Prime&quot;, system-ui, -apple-system, sans-serif;
+  --font-sier: &quot;Pinyon Script&quot;, cursive;
   --font-logo: &quot;Montserrat&quot;, &#39;Helvetica Neue&#39;, Arial, sans-serif;
-  --font-hand: &quot;Homemade Apple&quot;, &#39;Segoe Print&#39;, cursive;
+  --font-hand: &quot;Courier Prime&quot;, cursive;
+  --font-accent: &quot;Bodoni Moda&quot;, Georgia, serif;
 
   /* Knoppen */
   --knop-radius: 999px;
@@ -462,7 +578,6 @@ footer {
 .sier { font-family: var(--font-sier); font-weight: 400; color: var(--hoofd); }
 </code></pre>
     </section>
-
   </main>
 
   <footer>

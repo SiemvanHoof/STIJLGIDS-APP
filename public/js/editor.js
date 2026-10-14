@@ -49,13 +49,49 @@ let stijlgidsGewijzigd = false;
 let voorbeeldTimer = null;
 const dichtePanelen = new Set();
 
+// ---------- Oude of onvolledige stijlgids aanvullen ----------
+
+function maakVolledig(s) {
+  // Over het merk
+  if (!s.context || typeof s.context !== "object") s.context = {};
+  for (const veld of CONTEXT_VELDEN) {
+    if (typeof s.context[veld.key] !== "string") {
+      s.context[veld.key] = veld.key === "over" && typeof s.intro === "string" ? s.intro : "";
+    }
+  }
+  delete s.intro;
+
+  // Fonts: oude vorm was een object { koppen: "...", ... }
+  if (!Array.isArray(s.fonts)) {
+    const oud = s.fonts && typeof s.fonts === "object" ? s.fonts : {};
+    s.fonts = Object.entries(oud)
+      .filter(([rol, font]) => FONT_ROLLEN[rol] && font)
+      .map(([rol, font]) => ({ font, rol, gebruik: "" }));
+  }
+  if (!s.fonts.length) s.fonts = [{ font: "Inter", rol: "koppen", gebruik: "" }];
+  for (const font of s.fonts) {
+    if (!FONT_ROLLEN[font.rol]) font.rol = "accent";
+    if (typeof font.gebruik !== "string") font.gebruik = "";
+    if (typeof font.font !== "string") font.font = "";
+  }
+
+  // Overige onderdelen
+  if (!Array.isArray(s.kleuren)) s.kleuren = [];
+  if (!s.rollen) s.rollen = { achtergrond: 0, tekst: 0, hoofd: 0, tweede: 0 };
+  if (!s.knoppen) s.knoppen = { radius: 999, primair: "", secundair: "", link: "" };
+  if (typeof s.naam !== "string") s.naam = "";
+  if (typeof s.slogan !== "string") s.slogan = "";
+
+  return s;
+}
+
 // ---------- Laden en opslaan ----------
 
 async function laadStijlgids() {
   stijlgids = null;
   render();
   try {
-    stijlgids = await api(`/api/projecten/${openProjectId}/stijlgids`);
+    stijlgids = maakVolledig(await api(`/api/projecten/${openProjectId}/stijlgids`));
     stijlgidsGewijzigd = false;
     render();
   } catch (fout) {
@@ -76,7 +112,7 @@ async function slaStijlgidsOp() {
       method: "PUT",
       body: JSON.stringify(stijlgids),
     });
-    stijlgids = res.data;
+    stijlgids = maakVolledig(res.data);
     stijlgidsGewijzigd = false;
 
     if (res.waarschuwing) toast(res.waarschuwing, "fout");
@@ -424,4 +460,7 @@ content.addEventListener("toggle", (e) => {
   else dichtePanelen.add(paneelEl.dataset.paneel);
 }, true);
 
-//
+// Waarschuwing als je de pagina sluit met niet-opgeslagen wijzigingen
+window.addEventListener("beforeunload", (e) => {
+  if (stijlgidsGewijzigd) e.preventDefault();
+});

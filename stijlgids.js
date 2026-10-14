@@ -471,7 +471,7 @@ h3 { font-family: var(--font-koppen); font-weight: 500; font-size: 26px; line-he
 .kleur-lijst code { font-size: 12px; color: var(--gedempt); }
 .stip { width: 20px; height: 20px; flex: none; margin-top: 3px; border-radius: 50%; border: 1px solid var(--lijn); }
 
-/* Typografie */
+/* Typografie: elke kaart een eigen rand, dus nooit een lege cel */
 .voorbeeldkop {
   font-family: var(--font-koppen);
   font-size: clamp(40px, 6vw, 72px);
@@ -481,14 +481,19 @@ h3 { font-family: var(--font-koppen); font-weight: 500; font-size: 26px; line-he
 .voorbeeldkop .sier { font-size: 1.35em; line-height: 0.6; }
 .fonts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 1px;
-  background: var(--lijn);
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.font {
+  background: var(--vlak);
   border: 1px solid var(--lijn);
   border-radius: 6px;
-  overflow: hidden;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
-.font { background: var(--vlak); padding: 28px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .font__gebruik { color: var(--gedempt); font-size: 14px; }
 .font__aa { font-size: 96px; line-height: 1.1; margin: 16px 0 8px; }
 .font__abc { font-size: 15px; line-height: 1.5; color: var(--gedempt); overflow-wrap: anywhere; }
@@ -545,15 +550,56 @@ footer {
   }
 }
 
-/* PDF */
+/* =========================================
+   PDF (A4)
+   ========================================= */
 @page { size: A4; margin: 0; }
 
 @media print {
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  main { gap: 64px; padding-top: 56px; padding-bottom: 56px; }
-  .palet, .font, .knoppen, .kleur-lijst li, .regels, .twee-kolom, .waarden, pre { break-inside: avoid; }
-  h2, .label { break-after: avoid; }
-  pre { white-space: pre-wrap; word-break: break-all; }
+
+  .cover { min-height: 340px; }
+
+  /* Geen flex-gap in print: elke sectie regelt zijn eigen ruimte */
+  main {
+    display: block;
+    max-width: none;
+    padding: 0 48px;
+  }
+  main > section {
+    padding-top: 48px;
+    padding-bottom: 8px;
+  }
+
+  /* Grote onderdelen beginnen op een nieuwe pagina, zoals losse borden */
+  main > section.nieuwe-pagina {
+    break-before: page;
+    padding-top: 56px;
+  }
+
+  /* De code is alleen nuttig op de website */
+  main > section.alleen-scherm { display: none; }
+
+  /* Nooit doormidden knippen */
+  .palet, .kleur-lijst li, .font, .knoppen, .regels,
+  .twee-kolom, .twee-kolom > div, .waarden, .doen li, .niet li {
+    break-inside: avoid;
+  }
+  h2, h3, .label, .notitie, .voorbeeldkop { break-after: avoid; }
+  p { orphans: 3; widows: 3; }
+
+  /* Fonts compacter, altijd 2 kolommen */
+  .voorbeeldkop { margin-bottom: 24px; }
+  .fonts { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .font { padding: 20px; }
+  .font__aa { font-size: 64px; margin: 8px 0 4px; }
+  .font__abc { font-size: 12px; }
+
+  footer {
+    margin-top: 48px;
+    padding: 20px 48px;
+    break-inside: avoid;
+  }
 }
 `;
 
@@ -603,7 +649,7 @@ function maakHtml(d) {
     </section>` : "";
 
   const toon = c.toon || doen.length || nietDoen.length ? `
-    <section>
+    <section class="nieuwe-pagina">
       <p class="label">Tone of voice</p>
       <h2>Hoe we praten</h2>
       ${c.toon ? `<p class="lead" style="margin-bottom:32px">${alinea(c.toon)}</p>` : ""}
@@ -694,7 +740,7 @@ ${PAGINA_CSS}
     ${missieVisie}
     ${kernwaarden}
 
-    <section>
+    <section class="nieuwe-pagina">
       <p class="label">Kleuren</p>
       <h2>Kleurenpalet</h2>
       <div class="palet">${palet}
@@ -703,14 +749,14 @@ ${PAGINA_CSS}
       </ul>
     </section>
 
-    <section>
+    <section class="nieuwe-pagina">
       <p class="label">Typografie</p>
       <p class="voorbeeldkop">${voorbeeldkop}</p>
       <div class="fonts">${fontKaarten}
       </div>
     </section>
 
-    <section>
+    <section class="nieuwe-pagina">
       <p class="label">Knoppen</p>
       <h2>Knoppen</h2>
       <div class="knoppen">
@@ -728,7 +774,7 @@ ${PAGINA_CSS}
 
     ${toon}
 
-    <section>
+    <section class="alleen-scherm">
       <p class="label">Voor de website</p>
       <h2>Code</h2>
       <p class="lead" style="margin-bottom:20px">Zet de fonts-link in de &lt;head&gt; en gebruik de variabelen uit <code>stijlgids/variabelen.css</code>.</p>
