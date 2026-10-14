@@ -223,6 +223,29 @@ app.post("/api/projecten/:id/open", (req, res) => {
   res.json({ ok: true });
 });
 
+// Bestand verwijderen (verplaatst naar .prullenbak in de projectmap)
+app.delete("/api/projecten/:id/bestanden/:map/:naam", async (req, res) => {
+  const { map: sub, naam } = req.params;
+
+  if (!SUBMAPPEN.includes(sub)) {
+    return res.status(400).json({ fout: "Onbekende map." });
+  }
+  if (path.basename(naam) !== naam || naam.startsWith(".")) {
+    return res.status(400).json({ fout: "Ongeldige bestandsnaam." });
+  }
+
+  const projectMap = projectPad(req.params.id);
+  const prullenbak = path.join(projectMap, ".prullenbak", sub);
+  await fs.mkdir(prullenbak, { recursive: true });
+
+  await fs.rename(
+    path.join(projectMap, sub, naam),
+    path.join(prullenbak, `${Date.now()}-${naam}`)
+  );
+
+  res.json({ ok: true });
+});
+
 // ---------- Foutafhandeling ----------
 app.use((fout, req, res, next) => {
   const status = fout.code === "ENOENT" ? 404 : 500;

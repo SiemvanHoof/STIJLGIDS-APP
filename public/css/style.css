@@ -671,3 +671,222 @@ textarea:focus-visible {
     flex-direction: column;
   }
 }
+
+/* =========================================
+   14. KLIKBARE PROJECTEN
+   ========================================= */
+.project__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  border-radius: 6px;
+}
+
+.project__info .project__meta { display: block; }
+.project__naam { display: block; }
+
+.project__info:hover .project__naam {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
+}
+
+/* =========================================
+   15. PROJECTPAGINA
+   ========================================= */
+.terug-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  color: var(--text-muted);
+}
+.terug-link:hover { color: var(--text); }
+.terug-link [data-lucide], .terug-link .lucide { width: 16px; height: 16px; }
+
+.detail { margin-bottom: 16px; }
+
+.detail__head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.icon-tile--groot {
+  width: 56px;
+  height: 56px;
+}
+
+.detail__titel {
+  flex: 1;
+  min-width: 200px;
+}
+
+.detail__titel h2 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.detail__acties {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Infovakjes */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 20px;
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.info-grid > div {
+  padding: 14px 16px;
+  border-right: 1px solid var(--border);
+}
+.info-grid > div:last-child { border-right: none; }
+
+.info-grid dt {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-light);
+  margin-bottom: 4px;
+}
+
+.info-grid dd {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail__omschrijving {
+  margin-top: 16px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 70ch;
+}
+
+/* Uploadvlak */
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 28px 16px;
+  margin-bottom: 16px;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone .icon-tile { margin-bottom: 8px; }
+.dropzone:hover { border-color: #BDBDBD; }
+.dropzone.is-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Mappen */
+.mappen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.panel__titel [data-lucide], .panel__titel .lucide {
+  color: var(--text-muted);
+}
+
+.teller {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bestanden */
+.bestand-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.bestand {
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.bestand__voorbeeld {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  max-width: 100%;
+  background: var(--bg-main);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-light);
+}
+.bestand__voorbeeld img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.bestand__voorbeeld [data-lucide], .bestand__voorbeeld .lucide {
+  width: 28px;
+  height: 28px;
+}
+
+.bestand__info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px 8px 10px;
+}
+.bestand__info > div { flex: 1; min-width: 0; }
+
+.bestand__naam {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bestand__weg { flex: none; }
+.bestand__weg:hover { color: var(--red); background: var(--red-soft); }
+.bestand__weg.is-zeker {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bg-white);
+  background: var(--red);
+}
+
+@media (max-width: 640px) {
+  .mappen { grid-template-columns: 1fr; }
+  .info-grid > div { border-right: none; border-bottom: 1px solid var(--border); }
+}

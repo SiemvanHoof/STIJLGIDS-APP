@@ -18,17 +18,29 @@ const PAGINAS = {
   instellingen: "Instellingen",
 };
 
+const MAPPEN = {
+  site:       { label: "Website",      icoon: "code" },
+  images:     { label: "Afbeeldingen", icoon: "image" },
+  documenten: { label: "Documenten",   icoon: "file-text" },
+  stijlgids:  { label: "Stijlgids",    icoon: "palette" },
+};
+
 let projecten = [];
 let huidigePagina = "dashboard";
+let openProjectId = null;
+let bestanden = null;
 let zoekterm = "";
+let actiefFilter = "";
+
+const geschiedenis = { terug: [], vooruit: [] };
 
 const content = document.getElementById("content");
 const titel = document.getElementById("page-title");
 const zoekveld = document.getElementById("search");
+const [knopTerug, knopVooruit] = document.querySelectorAll(".topbar__arrows .icon-btn");
 
 // ---------- Hulpfuncties ----------
 
-// Praat met de server
 async function api(url, opties = {}) {
   const res = await fetch(url, {
     headers: { "Content-Type": "application/json" },
@@ -39,14 +51,12 @@ async function api(url, opties = {}) {
   return data;
 }
 
-// Voorkomt dat tekst als HTML wordt uitgevoerd
 function esc(tekst) {
   return String(tekst ?? "").replace(/[&<>"']/g, (t) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[t]));
 }
 
-// "2 dagen geleden"
 function geleden(datum) {
   if (!datum) return "";
   const sec = Math.floor((Date.now() - new Date(datum)) / 1000);
@@ -57,16 +67,14 @@ function geleden(datum) {
   if (uur < 24) return `${uur} uur geleden`;
   const dag = Math.floor(uur / 24);
   if (dag < 30) return dag === 1 ? "gisteren" : `${dag} dagen geleden`;
-  return new Date(datum).toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
+  return korteDatum(datum);
 }
 
-// "14 okt"
 function korteDatum(datum) {
   if (!datum) return "";
-  return new Date(datum).toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
+  return new Date(datum).toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" });
 }
 
-// Aantal dagen tot de deadline (negatief = te laat)
 function dagenTot(datum) {
   if (!datum) return null;
   const vandaag = new Date();
@@ -74,11 +82,29 @@ function dagenTot(datum) {
   return Math.round((new Date(datum) - vandaag) / 86400000);
 }
 
+function formatGrootte(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function isAfbeelding(naam) {
+  return /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(naam);
+}
+
+function bestandIcoon(naam) {
+  const ext = naam.split(".").pop().toLowerCase();
+  if (ext === "pdf") return "file-text";
+  if (["html", "htm", "css", "js"].includes(ext)) return "file-code";
+  if (["doc", "docx", "txt", "md"].includes(ext)) return "file-type";
+  if (["zip", "rar"].includes(ext)) return "file-archive";
+  return "file";
+}
+
 function tel(status) {
   return projecten.filter((p) => p.status === status).length;
 }
 
-// Melding rechtsonder
 function toast(tekst, soort = "ok") {
   const el = document.createElement("div");
   el.className = `toast toast--${soort}`;
@@ -88,6 +114,45 @@ function toast(tekst, soort = "ok") {
   setTimeout(() => el.remove(), 2600);
 }
 
+// ---------- Navigatie ----------
+
+function huidigeStand() {
+  return { pagina: huidigePagina, projectId: openProjectId };
+}
+
+function gaNaar(pagina, projectId = null, { opslaan = true } = {}) {
+  if (opslaan) {
+    geschiedenis.terug.push(huidigeStand());
+    geschiedenis.vooruit = [];
+  }
+
+  huidigePagina = pagina;
+  openProjectId = projectId;
+  bestanden = null;
+
+  document.querySelectorAll(".nav__item").forEach((item) => {
+    item.classList.toggle("is-active", item.dataset.page === pagina);
+  });
+
+  render();
+  if (projectId) laadBestanden();
+  window.scrollTo(0, 0);
+}
+
+knopTerug.addEventListener("click", () => {
+  const vorige = geschiedenis.terug.pop();
+  if (!vorige) return;
+  geschiedenis.vooruit.push(huidigeStand());
+  gaNaar(vorige.pagina, vorige.projectId, { opslaan: false });
+});
+
+knopVooruit.addEventListener("click", () => {
+  const volgende = geschiedenis.vooruit.pop();
+  if (!volgende) return;
+  geschiedenis.terug.push(huidigeStand());
+  gaNaar(volgende.pagina, volgende.projectId, { opslaan: false });
+});
+
 // ---------- Data ----------
 
 async function laadProjecten() {
@@ -95,6 +160,17 @@ async function laadProjecten() {
     projecten = await api("/api/projecten");
   } catch (fout) {
     toast(fout.message, "fout");
+  }
+  render();
+}
+
+async function laadBestanden() {
+  if (!openProjectId) return;
+  try {
+    bestanden = await api(`/api/projecten/${openProjectId}/bestanden`);
+  } catch (fout) {
+    toast(fout.message, "fout");
+    bestanden = {};
   }
   render();
 }
@@ -116,6 +192,43 @@ async function wijzigStatus(id, status) {
 async function openMap(id) {
   try {
     await api(`/api/projecten/${id}/open`, { method: "POST" });
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function uploadBestanden(lijst) {
+  if (!lijst.length || !openProjectId) return;
+
+  const formData = new FormData();
+  for (const bestand of lijst) formData.append("bestanden", bestand);
+
+  toast(`${lijst.length} ${lijst.length === 1 ? "bestand" : "bestanden"} uploaden…`);
+
+  try {
+    // Geen api() hier: bij FormData zet de browser zelf het juiste type
+    const res = await fetch(`/api/projecten/${openProjectId}/bestanden`, {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.fout || "Uploaden mislukt.");
+
+    toast(`${data.aantal} ${data.aantal === 1 ? "bestand" : "bestanden"} geüpload`);
+    await laadProjecten();
+    await laadBestanden();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function verwijderBestand(map, naam) {
+  try {
+    await api(`/api/projecten/${openProjectId}/bestanden/${map}/${encodeURIComponent(naam)}`, {
+      method: "DELETE",
+    });
+    toast(`"${naam}" naar de prullenbak verplaatst`);
+    await laadBestanden();
   } catch (fout) {
     toast(fout.message, "fout");
   }
@@ -151,7 +264,7 @@ function statusSelect(project) {
     .join("");
 
   return `
-    <label class="status-select status-select--${STATUS[project.status].kleur}">
+    <label class="status-select">
       <span class="dot dot--${STATUS[project.status].kleur}"></span>
       <select data-status-voor="${esc(project.id)}" aria-label="Status van ${esc(project.naam)}">
         ${opties}
@@ -164,11 +277,11 @@ function statusSelect(project) {
 function deadlineTekst(project) {
   const dagen = dagenTot(project.deadline);
   if (dagen === null) return `<span class="muted">Geen deadline</span>`;
-  if (project.status === "klaar") return `<span class="muted">Deadline ${korteDatum(project.deadline)}</span>`;
+  if (project.status === "klaar") return `<span class="muted">${korteDatum(project.deadline)}</span>`;
   if (dagen < 0) return `<span class="text--red">${Math.abs(dagen)} dagen te laat</span>`;
   if (dagen === 0) return `<span class="text--red">Vandaag</span>`;
   if (dagen <= 7) return `<span class="text--yellow-dark">Nog ${dagen} ${dagen === 1 ? "dag" : "dagen"}</span>`;
-  return `<span class="muted">Deadline ${korteDatum(project.deadline)}</span>`;
+  return `<span class="muted">${korteDatum(project.deadline)}</span>`;
 }
 
 function projectRij(project) {
@@ -176,10 +289,10 @@ function projectRij(project) {
   return `
     <article class="project">
       <div class="icon-tile icon-tile--${s.kleur}"><i data-lucide="${s.icoon}"></i></div>
-      <div class="project__info">
-        <p class="project__meta">${esc(project.klant || "Geen klant")} · bijgewerkt ${geleden(project.bijgewerkt)}</p>
-        <h3 class="project__naam">${esc(project.naam)}</h3>
-      </div>
+      <button class="project__info" data-project="${esc(project.id)}">
+        <span class="project__meta">${esc(project.klant || "Geen klant")} · bijgewerkt ${geleden(project.bijgewerkt)}</span>
+        <span class="project__naam">${esc(project.naam)}</span>
+      </button>
       <div class="project__rechts">
         <p class="project__deadline">${deadlineTekst(project)}</p>
         <div class="project__acties">
@@ -202,9 +315,53 @@ function gefilterdeProjecten(statusFilter = "") {
   });
 }
 
-// ---------- Pagina's ----------
+function bestandKaart(map, bestand) {
+  const voorbeeld = isAfbeelding(bestand.naam)
+    ? `<img src="${esc(bestand.url)}" alt="" loading="lazy">`
+    : `<i data-lucide="${bestandIcoon(bestand.naam)}"></i>`;
 
-let actiefFilter = "";
+  return `
+    <article class="bestand">
+      <a class="bestand__voorbeeld" href="${esc(bestand.url)}" target="_blank" rel="noopener" title="Openen">
+        ${voorbeeld}
+      </a>
+      <div class="bestand__info">
+        <div>
+          <p class="bestand__naam" title="${esc(bestand.naam)}">${esc(bestand.naam)}</p>
+          <p class="muted klein">${formatGrootte(bestand.grootte)}</p>
+        </div>
+        <button class="icon-btn bestand__weg" data-verwijder="${esc(map)}" data-naam="${esc(bestand.naam)}" title="Verwijderen">
+          <i data-lucide="trash-2"></i>
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function mapPaneel(key, map) {
+  const lijst = bestanden?.[key];
+
+  let inhoud;
+  if (!bestanden) inhoud = `<p class="muted klein">Laden…</p>`;
+  else if (!lijst || !lijst.length) inhoud = `<p class="muted klein">Nog geen bestanden.</p>`;
+  else inhoud = `<div class="bestand-grid">${lijst.map((b) => bestandKaart(key, b)).join("")}</div>`;
+
+  return `
+    <section class="panel">
+      <header class="panel__head">
+        <div class="panel__titel">
+          <i data-lucide="${map.icoon}"></i>
+          <h2>${map.label}</h2>
+          ${lijst ? `<span class="teller">${lijst.length}</span>` : ""}
+        </div>
+        <code>${key}/</code>
+      </header>
+      ${inhoud}
+    </section>
+  `;
+}
+
+// ---------- Pagina's ----------
 
 function renderDashboard() {
   const dezeWeek = projecten.filter((p) => {
@@ -260,6 +417,75 @@ function renderDashboard() {
   `;
 }
 
+function renderProject() {
+  const p = projecten.find((x) => x.id === openProjectId);
+
+  if (!p) {
+    content.innerHTML = `
+      <section class="panel">
+        <div class="leeg">
+          <div class="icon-tile"><i data-lucide="folder-x"></i></div>
+          <p><strong>Project niet gevonden</strong></p>
+          <p class="muted">Misschien is de map verplaatst of hernoemd.</p>
+        </div>
+      </section>`;
+    return;
+  }
+
+  const s = STATUS[p.status];
+  const totaal = bestanden
+    ? Object.values(bestanden).reduce((som, lijst) => som + lijst.length, 0)
+    : "…";
+
+  content.innerHTML = `
+    <button class="terug-link" data-nav="dashboard">
+      <i data-lucide="arrow-left"></i> Alle projecten
+    </button>
+
+    <section class="panel detail">
+      <header class="detail__head">
+        <div class="icon-tile icon-tile--${s.kleur} icon-tile--groot"><i data-lucide="${s.icoon}"></i></div>
+        <div class="detail__titel">
+          <p class="project__meta">${esc(p.klant || "Geen klant")}</p>
+          <h2>${esc(p.naam)}</h2>
+        </div>
+        <div class="detail__acties">
+          <a class="btn btn--ghost" href="/projecten/${esc(p.id)}/site/index.html" target="_blank" rel="noopener">
+            <i data-lucide="external-link"></i> Bekijk site
+          </a>
+          <button class="btn btn--ghost" data-open="${esc(p.id)}">
+            <i data-lucide="folder-open"></i> Open map
+          </button>
+          <button class="btn btn--ghost" data-bewerk>
+            <i data-lucide="pencil"></i> Bewerken
+          </button>
+          ${statusSelect(p)}
+        </div>
+      </header>
+
+      <dl class="info-grid">
+        <div><dt>Deadline</dt><dd>${deadlineTekst(p)}</dd></div>
+        <div><dt>Aangemaakt</dt><dd>${korteDatum(p.aangemaakt)}</dd></div>
+        <div><dt>Bijgewerkt</dt><dd>${geleden(p.bijgewerkt)}</dd></div>
+        <div><dt>Bestanden</dt><dd>${totaal}</dd></div>
+      </dl>
+
+      ${p.omschrijving ? `<p class="detail__omschrijving">${esc(p.omschrijving)}</p>` : ""}
+    </section>
+
+    <label class="dropzone" id="dropzone">
+      <input type="file" multiple id="upload-input" hidden>
+      <div class="icon-tile"><i data-lucide="upload"></i></div>
+      <p><strong>Sleep bestanden hierheen</strong> of klik om te kiezen</p>
+      <p class="muted klein">Afbeeldingen gaan naar images, HTML/CSS/JS naar site, de rest naar documenten.</p>
+    </label>
+
+    <div class="mappen">
+      ${Object.entries(MAPPEN).map(([key, map]) => mapPaneel(key, map)).join("")}
+    </div>
+  `;
+}
+
 function renderBinnenkort(naam) {
   content.innerHTML = `
     <section class="panel">
@@ -273,38 +499,49 @@ function renderBinnenkort(naam) {
 }
 
 function render() {
-  titel.textContent = PAGINAS[huidigePagina];
+  if (openProjectId) {
+    const p = projecten.find((x) => x.id === openProjectId);
+    titel.textContent = p ? p.naam : "Project";
+    renderProject();
+  } else {
+    titel.textContent = PAGINAS[huidigePagina];
+    if (huidigePagina === "dashboard") renderDashboard();
+    else renderBinnenkort(PAGINAS[huidigePagina]);
+  }
 
-  if (huidigePagina === "dashboard") renderDashboard();
-  else renderBinnenkort(PAGINAS[huidigePagina]);
+  knopTerug.disabled = !geschiedenis.terug.length;
+  knopVooruit.disabled = !geschiedenis.vooruit.length;
 
   lucide.createIcons();
 }
 
-// ---------- Nieuw project (pop-up) ----------
+// ---------- Projectformulier (nieuw + bewerken) ----------
 
-function openNieuwProject() {
+function openProjectFormulier(project = null) {
+  const bewerken = Boolean(project);
+  const waarde = (veld) => esc(project?.[veld] ?? "");
+
   const opties = Object.entries(STATUS)
-    .map(([key, s]) => `<option value="${key}">${s.label}</option>`)
+    .map(([key, s]) => `<option value="${key}" ${project?.status === key ? "selected" : ""}>${s.label}</option>`)
     .join("");
 
   const modal = document.createElement("div");
   modal.className = "modal-achtergrond";
   modal.innerHTML = `
-    <form class="modal" id="project-form">
+    <form class="modal">
       <header class="modal__head">
-        <h2>Nieuw project</h2>
+        <h2>${bewerken ? "Project bewerken" : "Nieuw project"}</h2>
         <button type="button" class="icon-btn" data-sluit aria-label="Sluiten"><i data-lucide="x"></i></button>
       </header>
 
       <div class="modal__body">
         <label class="veld">
           <span>Projectnaam</span>
-          <input name="naam" type="text" placeholder="Bijv. Bloemenwinkel Lisa" required>
+          <input name="naam" type="text" placeholder="Bijv. Bloemenwinkel Lisa" value="${waarde("naam")}" required>
         </label>
         <label class="veld">
           <span>Klant</span>
-          <input name="klant" type="text" placeholder="Naam van de klant">
+          <input name="klant" type="text" placeholder="Naam van de klant" value="${waarde("klant")}">
         </label>
         <div class="veld-rij">
           <label class="veld">
@@ -313,20 +550,24 @@ function openNieuwProject() {
           </label>
           <label class="veld">
             <span>Deadline</span>
-            <input name="deadline" type="date">
+            <input name="deadline" type="date" value="${waarde("deadline")}">
           </label>
         </div>
         <label class="veld">
           <span>Omschrijving</span>
-          <textarea name="omschrijving" rows="3" placeholder="Wat ga je maken?"></textarea>
+          <textarea name="omschrijving" rows="3" placeholder="Wat ga je maken?">${waarde("omschrijving")}</textarea>
         </label>
-        <p class="muted klein">Er wordt een map aangemaakt met <code>site</code>, <code>images</code>, <code>documenten</code> en <code>stijlgids</code>.</p>
+        <p class="muted klein">
+          ${bewerken
+            ? "Let op: de mapnaam blijft hetzelfde, ook als je de projectnaam aanpast."
+            : "Er wordt een map aangemaakt met <code>site</code>, <code>images</code>, <code>documenten</code> en <code>stijlgids</code>."}
+        </p>
         <p class="form-fout" hidden></p>
       </div>
 
       <footer class="modal__voet">
         <button type="button" class="btn btn--ghost" data-sluit>Annuleren</button>
-        <button type="submit" class="btn btn--primary">Project aanmaken</button>
+        <button type="submit" class="btn btn--primary">${bewerken ? "Opslaan" : "Project aanmaken"}</button>
       </footer>
     </form>
   `;
@@ -335,17 +576,17 @@ function openNieuwProject() {
   lucide.createIcons();
   modal.querySelector('[name="naam"]').focus();
 
-  const sluit = () => modal.remove();
+  function opEscape(e) {
+    if (e.key === "Escape") sluit();
+  }
+  function sluit() {
+    modal.remove();
+    document.removeEventListener("keydown", opEscape);
+  }
 
+  document.addEventListener("keydown", opEscape);
   modal.addEventListener("click", (e) => {
     if (e.target === modal || e.target.closest("[data-sluit]")) sluit();
-  });
-
-  document.addEventListener("keydown", function esc(e) {
-    if (e.key === "Escape") {
-      sluit();
-      document.removeEventListener("keydown", esc);
-    }
   });
 
   modal.querySelector("form").addEventListener("submit", async (e) => {
@@ -354,10 +595,19 @@ function openNieuwProject() {
     const foutEl = modal.querySelector(".form-fout");
 
     try {
-      const nieuw = await api("/api/projecten", { method: "POST", body: JSON.stringify(data) });
-      projecten.unshift(nieuw);
+      if (bewerken) {
+        const bijgewerkt = await api(`/api/projecten/${project.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(data),
+        });
+        projecten = projecten.map((p) => (p.id === project.id ? { ...p, ...bijgewerkt } : p));
+        toast("Project opgeslagen");
+      } else {
+        const nieuw = await api("/api/projecten", { method: "POST", body: JSON.stringify(data) });
+        projecten.unshift(nieuw);
+        toast(`"${nieuw.naam}" aangemaakt`);
+      }
       sluit();
-      toast(`"${nieuw.naam}" aangemaakt`);
       render();
     } catch (fout) {
       foutEl.textContent = fout.message;
@@ -366,20 +616,17 @@ function openNieuwProject() {
   });
 }
 
-// ---------- Klikken en typen ----------
+// ---------- Klikken, slepen en typen ----------
 
 // Menu
 document.querySelectorAll(".nav__item").forEach((item) => {
   item.addEventListener("click", (e) => {
     e.preventDefault();
-    document.querySelectorAll(".nav__item").forEach((i) => i.classList.remove("is-active"));
-    item.classList.add("is-active");
-    huidigePagina = item.dataset.page;
-    render();
+    gaNaar(item.dataset.page);
   });
 });
 
-// Knoppen in de inhoud
+// Alle knoppen in de inhoud
 content.addEventListener("click", (e) => {
   const filterKnop = e.target.closest("[data-filter]");
   if (filterKnop) {
@@ -388,25 +635,78 @@ content.addEventListener("click", (e) => {
     return;
   }
 
+  const projectKnop = e.target.closest("[data-project]");
+  if (projectKnop) return gaNaar(huidigePagina, projectKnop.dataset.project);
+
+  const navKnop = e.target.closest("[data-nav]");
+  if (navKnop) return gaNaar(navKnop.dataset.nav);
+
   const openKnop = e.target.closest("[data-open]");
   if (openKnop) return openMap(openKnop.dataset.open);
 
-  if (e.target.closest("#nieuw-project")) openNieuwProject();
+  if (e.target.closest("[data-bewerk]")) {
+    return openProjectFormulier(projecten.find((p) => p.id === openProjectId));
+  }
+
+  if (e.target.closest("#nieuw-project")) return openProjectFormulier();
+
+  // Verwijderen: eerste klik vraagt bevestiging, tweede klik verwijdert
+  const weg = e.target.closest("[data-verwijder]");
+  if (weg) {
+    if (weg.classList.contains("is-zeker")) {
+      verwijderBestand(weg.dataset.verwijder, weg.dataset.naam);
+    } else {
+      weg.classList.add("is-zeker");
+      weg.textContent = "Zeker?";
+      setTimeout(() => {
+        if (!weg.isConnected) return;
+        weg.classList.remove("is-zeker");
+        weg.innerHTML = `<i data-lucide="trash-2"></i>`;
+        lucide.createIcons();
+      }, 3000);
+    }
+  }
 });
 
-// Status-dropdowns
+// Dropdowns en bestandskiezer
 content.addEventListener("change", (e) => {
   const select = e.target.closest("[data-status-voor]");
-  if (select) wijzigStatus(select.dataset.statusVoor, select.value);
+  if (select) return wijzigStatus(select.dataset.statusVoor, select.value);
+
+  if (e.target.id === "upload-input") {
+    uploadBestanden(e.target.files);
+    e.target.value = "";
+  }
+});
+
+// Slepen naar het uploadvlak
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => e.preventDefault());
+
+content.addEventListener("dragover", (e) => {
+  const zone = e.target.closest("#dropzone");
+  if (zone) zone.classList.add("is-over");
+});
+
+content.addEventListener("dragleave", (e) => {
+  const zone = e.target.closest("#dropzone");
+  if (zone && !zone.contains(e.relatedTarget)) zone.classList.remove("is-over");
+});
+
+content.addEventListener("drop", (e) => {
+  const zone = e.target.closest("#dropzone");
+  if (!zone) return;
+  zone.classList.remove("is-over");
+  uploadBestanden(e.dataTransfer.files);
 });
 
 // Zoeken
 zoekveld.addEventListener("input", () => {
   zoekterm = zoekveld.value;
-  if (huidigePagina === "dashboard") render();
+  if (openProjectId) gaNaar("dashboard");
+  else if (huidigePagina === "dashboard") render();
 });
 
-// Ctrl/Cmd + F = zoekveld
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
     e.preventDefault();
