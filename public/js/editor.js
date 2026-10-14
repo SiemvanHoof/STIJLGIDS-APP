@@ -310,6 +310,7 @@ function renderEditor() {
   const terugTekst = standaard ? "Instellingen" : (p?.naam || "Project");
   const balkTekst = standaard ? "standaard stijlgids" : `projecten/${esc(openProjectId)}/site/index.html`;
   const knopTekst = standaard ? "Opslaan" : "Opslaan en bestanden maken";
+  const magOpslaan = magIk(standaard ? "instellingen" : "stijlgidsen");
 
   content.innerHTML = `
     <div class="editor-kop">
@@ -317,10 +318,12 @@ function renderEditor() {
         <i data-lucide="arrow-left"></i> ${esc(terugTekst)}
       </button>
       <div class="editor-kop__acties">
+        ${magOpslaan ? `
         <span class="muted klein" id="opslaan-status">${stijlgidsGewijzigd ? "Niet opgeslagen wijzigingen" : "Alles opgeslagen"}</span>
         <button class="btn btn--primary" data-stijlgids-opslaan>
           <i data-lucide="save"></i> ${knopTekst}
-        </button>
+        </button>` : `
+        <span class="muted klein">Alleen bekijken — je rol mag dit niet opslaan</span>`}
       </div>
     </div>
 

@@ -114,22 +114,68 @@ Dat blijft los van de eigen merkkleur van het dashboard hierboven.
 
 ## Status
 
-Klaar: stap 1–9 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
+Klaar: stap 1–11 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
 met live voorbeeld, PDF/PNG-export, flexibele fonts + kopjes over het merk, pagina's Projecten,
 Stijlgidsen en Klanten, Instellingen met studionaam/logo/standaard-stijlgids/opslagpaden,
-inloggen + rollen).
+inloggen + rollen, fijnmazige rechten per rol, bestanden bij een klant).
 
 Geparkeerd: de PDF moet later een andere opzet krijgen (Siem bepaalt nog hoe, mogelijk liggende
 "borden" zoals een brand-guidelines-presentatie). Niet zelf aanpassen zonder te vragen.
 
-Volgende: nog niet bepaald.
+Volgende (in deze volgorde afgesproken): facturen & offertes (echte, verstuurbare facturen
+met BTW/nummering/bedrijfsgegevens) → website-preview per project (de echte, los gebouwde
+site uploaden en bekijken, incl. mappenstructuur) → menu opdelen in gegroepeerde categorieën.
+
+## Stap 11: Bestanden bij een klant (klaar, okt 2026)
+
+Een klant heeft nu, net als een project, een eigen bestandenmap: `data/klanten/<klant-id>/`
+met `images/` en `documenten/` (geen `stijlgids`/`site` — niet van toepassing bij een klant).
+
+- **Belangrijk verschil met projectbestanden: klantbestanden zijn NIET publiek.**
+  Projectbestanden staan onder de statische `/projecten`-route (bewust, voor het delen van
+  de stijlgids-site met klanten). Klantbestanden (facturen, contracten) gaan via
+  `GET /api/klanten/:id/bestanden/:map/:naam` — een gewone, ingelogde route (geen
+  `express.static`), dus automatisch afgeschermd door `vereistIngelogd`. Nieuwe
+  bestanden/mappen hieraan toevoegen: nooit per ongeluk via `express.static` publiek maken.
+- Server.js: `klantPad(id)` (mirrort `projectPad`), `uploadKlant` (tweede multer-instance,
+  mirrort `upload`), routes onder "API: klantbestanden". Schrijvende routes achter
+  `vereistRecht("klanten")`; lezen (lijst + los bestand) blijft open voor elke ingelogde
+  gebruiker. Verwijderen = naar `.prullenbak/` in de klantmap, zelfde patroon als projecten.
+  Een klant verwijderen raakt zijn bestandenmap niet aan (geen auto-opruiming).
+- app.js: `mapPaneel(key, map, bron)` is generiek gemaakt (was hardcoded aan de globale
+  `bestanden`) zodat zowel projecten als klanten 'm kunnen gebruiken. De dropzone/upload/
+  verwijder-handlers zijn context-bewust: ze kijken naar `openKlantId` om te kiezen tussen
+  de klant- of project-variant (dezelfde DOM-ids `#dropzone`/`#upload-input`/`[data-verwijder]`
+  kunnen hergebruikt worden omdat een project- en klantpagina nooit tegelijk in `#content`
+  staan).
+
+## Stap 10: Fijnmazige rechten per rol (klaar, okt 2026)
+
+Beheerder kan bij "Gebruikers" nu instellen wat de rol Medewerker mag aanpassen. Vier
+rechten (`projecten`, `klanten`, `stijlgidsen`, `instellingen`), standaard allemaal aan.
+Beheerder zelf is niet instelbaar (kan altijd alles, voorkomt zelf-buitensluiting).
+
+- `data/rechten.json`: plat object met de vier rechten (alleen voor medewerker). Ontbrekend
+  bestand of ontbrekende sleutel → `true` (bestaand gedrag blijft hetzelfde totdat een
+  beheerder iets uitzet). `leesRechten()`/`schrijfRechten()`/`rechtenVoor(gebruiker)` in
+  server.js.
+- `vereistRecht(naam)` middleware, toegepast op de schrijvende routes (GETs blijven altijd
+  open — bekijken mag iedereen die is ingelogd): project/klant aanmaken/bewerken/verwijderen,
+  bestanden uploaden/verwijderen → `projecten`; klant-CRUD → `klanten`; stijlgids opslaan
+  (`PUT /api/projecten/:id/stijlgids`) → `stijlgidsen`; instellingen/logo/standaard-stijlgids
+  → `instellingen`. Nieuw: `GET/PATCH /api/rechten` (beheerder-only).
+- `GET /api/sessie` geeft `gebruiker.rechten` mee (voor beheerder altijd alles `true`).
+  Frontend-helper `magIk(naam)` in app.js (`ingelogdeGebruiker?.rechten?.[naam] !== false`).
+- UI-gating is bewust licht: alleen de belangrijkste knoppen (Nieuw project, Nieuwe klant,
+  stijlgids-opslaan, Instellingen-bewerkknoppen) worden verborgen/uitgeschakeld. Kleinere
+  acties (status wijzigen, bestand verwijderen) blijven zichtbaar in de UI maar worden wel
+  door de server geblokkeerd met een foutmelding — de server is de echte grens, niet de UI.
 
 ## Stap 9: Inloggen en rollen (klaar, okt 2026)
 
 Login-systeem met sessies (`express-session`) en twee vaste rollen: `beheerder` en
 `medewerker`. Alleen beheerders kunnen bij "Gebruikers" rollen aanpassen of andere
-gebruikers aanmaken/verwijderen — verder is de app voor beide rollen hetzelfde (fijnmazige
-rechten per rol zijn bewust nog niet gebouwd).
+gebruikers aanmaken/verwijderen.
 
 - `data/gebruikers.json`: lijst met `{ id, naam, email, wachtwoordHash, rol, aangemaakt }`.
   Wachtwoorden worden gehasht met Node's ingebouwde `crypto.scrypt` (salt + hash als

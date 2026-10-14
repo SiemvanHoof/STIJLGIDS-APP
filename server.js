@@ -18,17 +18,21 @@ const app = express();
 const PORT = 3000;
 const PROJECTEN_MAP = path.join(__dirname, "projecten");
 const DATA_MAP = path.join(__dirname, "data");
+const KLANTEN_MAP = path.join(DATA_MAP, "klanten");
 const KLANTEN_BESTAND = path.join(DATA_MAP, "klanten.json");
 const INSTELLINGEN_BESTAND = path.join(DATA_MAP, "instellingen.json");
 const STIJLGIDS_STANDAARD_BESTAND = path.join(DATA_MAP, "stijlgids-standaard.json");
 const GEBRUIKERS_BESTAND = path.join(DATA_MAP, "gebruikers.json");
 const SESSIE_SLEUTEL_BESTAND = path.join(DATA_MAP, "sessie-sleutel.txt");
+const RECHTEN_BESTAND = path.join(DATA_MAP, "rechten.json");
 
 const STATUSSEN = ["nog-beginnen", "bezig", "wacht-op-klant", "klaar"];
 const SUBMAPPEN = ["site", "images", "documenten", "stijlgids"];
+const SUBMAPPEN_KLANT = ["images", "documenten"];
 const KLANT_VELDEN = ["naam", "bedrijf", "email", "telefoon", "instagram", "website", "notities"];
 const LOGO_TYPES = { "image/png": ".png", "image/jpeg": ".jpg", "image/svg+xml": ".svg", "image/webp": ".webp" };
 const ROLLEN = ["beheerder", "medewerker"];
+const RECHTEN = ["projecten", "klanten", "stijlgidsen", "instellingen"];
 const OPEN_API_PADEN = ["/api/setup-status", "/api/setup", "/api/login", "/api/logout", "/api/sessie"];
 
 app.use(express.json());
@@ -148,6 +152,13 @@ function kiesSubmap(bestand) {
 }
 
 // ---------- Hulpfuncties: klanten ----------
+
+// Geeft het veilige pad naar de bestandenmap van een klant
+function klantPad(id) {
+  const veilig = maakSlug(id);
+  if (!veilig) throw new Error("Ongeldige klantnaam");
+  return path.join(KLANTEN_MAP, veilig);
+}
 
 async function leesKlanten() {
   try {
@@ -275,6 +286,36 @@ function registreerMislukking(email) {
   }
 }
 
+// ---------- Hulpfuncties: rechten ----------
+
+// Alleen de rechten van de rol "medewerker" (beheerder kan altijd alles, niet instelbaar)
+async function leesRechten() {
+  try {
+    const opgeslagen = JSON.parse(await fs.readFile(RECHTEN_BESTAND, "utf8"));
+    const rechten = {};
+    for (const naam of RECHTEN) rechten[naam] = opgeslagen[naam] !== false;
+    return rechten;
+  } catch {
+    const rechten = {};
+    for (const naam of RECHTEN) rechten[naam] = true;
+    return rechten;
+  }
+}
+
+async function schrijfRechten(rechten) {
+  await fs.mkdir(DATA_MAP, { recursive: true });
+  await fs.writeFile(RECHTEN_BESTAND, JSON.stringify(rechten, null, 2));
+}
+
+async function rechtenVoor(gebruiker) {
+  if (!gebruiker || gebruiker.rol === "beheerder") {
+    const alles = {};
+    for (const naam of RECHTEN) alles[naam] = true;
+    return alles;
+  }
+  return leesRechten();
+}
+
 // ---------- Middleware: inloggen en rollen ----------
 
 function vereistIngelogd(req, res, next) {
@@ -293,6 +334,19 @@ async function vereistBeheerder(req, res, next) {
     return res.status(403).json({ fout: "Alleen voor beheerders." });
   }
   next();
+}
+
+// Beheerder mag altijd; een medewerker alleen als het recht niet expliciet uitgezet is
+function vereistRecht(naam) {
+  return async (req, res, next) => {
+    const lijst = await leesGebruikers();
+    const gebruiker = lijst.find((g) => g.id === req.session.gebruikerId);
+    const rechten = await rechtenVoor(gebruiker);
+    if (rechten[naam] === false) {
+      return res.status(403).json({ fout: "Je rol heeft hier geen toegang toe." });
+    }
+    next();
+  };
 }
 
 // ---------- Hulpfuncties: instellingen ----------
@@ -410,7 +464,10 @@ app.get("/api/sessie", async (req, res) => {
   const gebruiker = lijst.find((g) => g.id === req.session.gebruikerId);
   if (!gebruiker) return res.json({ ingelogd: false });
 
-  res.json({ ingelogd: true, gebruiker: gebruikerZonderHash(gebruiker) });
+  res.json({
+    ingelogd: true,
+    gebruiker: { ...gebruikerZonderHash(gebruiker), rechten: await rechtenVoor(gebruiker) },
+  });
 });
 
 // Eigen wachtwoord wijzigen
@@ -511,6 +568,20 @@ app.delete("/api/gebruikers/:id", vereistBeheerder, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Rechten van de rol "medewerker" (beheerder kan altijd alles, niet instelbaar)
+app.get("/api/rechten", vereistBeheerder, async (req, res) => {
+  res.json(await leesRechten());
+});
+
+app.patch("/api/rechten", vereistBeheerder, async (req, res) => {
+  const rechten = await leesRechten();
+  for (const naam of RECHTEN) {
+    if (req.body[naam] !== undefined) rechten[naam] = Boolean(req.body[naam]);
+  }
+  await schrijfRechten(rechten);
+  res.json(rechten);
+});
+
 // ---------- API: projecten ----------
 
 // Alle projecten ophalen (met cover en stijlgids-samenvatting)
@@ -545,7 +616,7 @@ app.get("/api/projecten/:id", async (req, res) => {
 });
 
 // Nieuw project aanmaken (mappen + standaard stijlgids + PDF/PNG's)
-app.post("/api/projecten", async (req, res) => {
+app.post("/api/projecten", vereistRecht("projecten"), async (req, res) => {
   const { naam, klant = "", status = "nog-beginnen", deadline = "", omschrijving = "" } = req.body;
 
   if (!naam || !maakSlug(naam)) {
@@ -590,7 +661,7 @@ app.post("/api/projecten", async (req, res) => {
 });
 
 // Project aanpassen (bijv. de status of de klant)
-app.patch("/api/projecten/:id", async (req, res) => {
+app.patch("/api/projecten/:id", vereistRecht("projecten"), async (req, res) => {
   const project = await leesProject(req.params.id);
   const toegestaan = ["naam", "status", "deadline", "omschrijving"];
 
@@ -636,7 +707,7 @@ const upload = multer({
 });
 
 // Bestanden uploaden
-app.post("/api/projecten/:id/bestanden", upload.array("bestanden"), async (req, res) => {
+app.post("/api/projecten/:id/bestanden", vereistRecht("projecten"), upload.array("bestanden"), async (req, res) => {
   const project = await leesProject(req.params.id);
   project.bijgewerkt = new Date().toISOString();
   await schrijfProject(req.params.id, project);
@@ -671,7 +742,7 @@ app.get("/api/projecten/:id/bestanden", async (req, res) => {
 });
 
 // Bestand verwijderen (verplaatst naar .prullenbak in de projectmap)
-app.delete("/api/projecten/:id/bestanden/:map/:naam", async (req, res) => {
+app.delete("/api/projecten/:id/bestanden/:map/:naam", vereistRecht("projecten"), async (req, res) => {
   const { map: sub, naam } = req.params;
 
   if (!SUBMAPPEN.includes(sub)) {
@@ -714,7 +785,7 @@ app.get("/api/klanten", async (req, res) => {
 });
 
 // Nieuwe klant
-app.post("/api/klanten", async (req, res) => {
+app.post("/api/klanten", vereistRecht("klanten"), async (req, res) => {
   const lijst = await leesKlanten();
   const naam = schoonKlantVeld("naam", req.body.naam);
 
@@ -734,7 +805,7 @@ app.post("/api/klanten", async (req, res) => {
 });
 
 // Klant aanpassen (een nieuwe naam wordt ook in zijn projecten aangepast)
-app.patch("/api/klanten/:id", async (req, res) => {
+app.patch("/api/klanten/:id", vereistRecht("klanten"), async (req, res) => {
   const lijst = await leesKlanten();
   const klant = lijst.find((k) => k.id === req.params.id);
   if (!klant) return res.status(404).json({ fout: "Klant niet gevonden." });
@@ -772,7 +843,7 @@ app.patch("/api/klanten/:id", async (req, res) => {
 });
 
 // Klant verwijderen (alleen als hij geen projecten meer heeft)
-app.delete("/api/klanten/:id", async (req, res) => {
+app.delete("/api/klanten/:id", vereistRecht("klanten"), async (req, res) => {
   const lijst = await leesKlanten();
   const klant = lijst.find((k) => k.id === req.params.id);
   if (!klant) return res.status(404).json({ fout: "Klant niet gevonden." });
@@ -797,6 +868,111 @@ app.delete("/api/klanten/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- API: klantbestanden ----------
+// Let op: klantbestanden zijn privé (facturen, contracten) en worden, anders dan
+// projectbestanden, niet statisch/publiek geserveerd — alleen via deze ingelogde routes.
+
+const uploadKlant = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      try {
+        const map = klantPad(req.params.id);
+        if (!fsSync.existsSync(map)) return cb(new Error("Klant bestaat niet"));
+        cb(null, path.join(map, kiesSubmap(file)));
+      } catch (fout) {
+        cb(fout);
+      }
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      const naam = maakSlug(path.basename(file.originalname, ext)) || "bestand";
+      cb(null, naam + ext);
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 }, // max 50 MB per bestand
+});
+
+// Bestanden uploaden
+app.post("/api/klanten/:id/bestanden", vereistRecht("klanten"), uploadKlant.array("bestanden"), async (req, res) => {
+  res.status(201).json({ aantal: req.files.length });
+});
+
+// Alle bestanden van een klant ophalen, per map
+app.get("/api/klanten/:id/bestanden", async (req, res) => {
+  const map = klantPad(req.params.id);
+  const resultaat = {};
+
+  for (const sub of SUBMAPPEN_KLANT) {
+    const subPad = path.join(map, sub);
+    await fs.mkdir(subPad, { recursive: true });
+    const bestanden = await fs.readdir(subPad, { withFileTypes: true });
+
+    resultaat[sub] = await Promise.all(
+      bestanden
+        .filter((b) => b.isFile() && !b.name.startsWith("."))
+        .map(async (b) => {
+          const info = await fs.stat(path.join(subPad, b.name));
+          return {
+            naam: b.name,
+            grootte: info.size,
+            url: `/api/klanten/${path.basename(map)}/bestanden/${sub}/${encodeURIComponent(b.name)}?v=${Math.round(info.mtimeMs)}`,
+          };
+        })
+    );
+  }
+
+  res.json(resultaat);
+});
+
+// Eén klantbestand opvragen (alleen ingelogd, niet publiek zoals projectbestanden)
+app.get("/api/klanten/:id/bestanden/:map/:naam", async (req, res) => {
+  const { map: sub, naam } = req.params;
+
+  if (!SUBMAPPEN_KLANT.includes(sub)) {
+    return res.status(400).json({ fout: "Onbekende map." });
+  }
+  if (path.basename(naam) !== naam || naam.startsWith(".")) {
+    return res.status(400).json({ fout: "Ongeldige bestandsnaam." });
+  }
+
+  res.sendFile(path.join(klantPad(req.params.id), sub, naam));
+});
+
+// Klantbestand verwijderen (verplaatst naar .prullenbak in de klantmap)
+app.delete("/api/klanten/:id/bestanden/:map/:naam", vereistRecht("klanten"), async (req, res) => {
+  const { map: sub, naam } = req.params;
+
+  if (!SUBMAPPEN_KLANT.includes(sub)) {
+    return res.status(400).json({ fout: "Onbekende map." });
+  }
+  if (path.basename(naam) !== naam || naam.startsWith(".")) {
+    return res.status(400).json({ fout: "Ongeldige bestandsnaam." });
+  }
+
+  const klantMap = klantPad(req.params.id);
+  const prullenbak = path.join(klantMap, ".prullenbak", sub);
+  await fs.mkdir(prullenbak, { recursive: true });
+
+  await fs.rename(
+    path.join(klantMap, sub, naam),
+    path.join(prullenbak, `${Date.now()}-${naam}`)
+  );
+
+  res.json({ ok: true });
+});
+
+// Klantmap openen in Finder / Verkenner
+app.post("/api/klanten/:id/open", async (req, res) => {
+  const map = klantPad(req.params.id);
+  await fs.mkdir(map, { recursive: true });
+  const commando =
+    process.platform === "darwin" ? "open" :
+    process.platform === "win32" ? "explorer" : "xdg-open";
+
+  execFile(commando, [map]);
+  res.json({ ok: true });
+});
+
 // ---------- API: stijlgids ----------
 
 // Stijlgids van een project ophalen
@@ -813,7 +989,7 @@ app.get("/api/projecten/:id/stijlgids", async (req, res) => {
 });
 
 // Stijlgids opslaan en alle bestanden genereren (inclusief PDF en PNG's)
-app.put("/api/projecten/:id/stijlgids", async (req, res) => {
+app.put("/api/projecten/:id/stijlgids", vereistRecht("stijlgidsen"), async (req, res) => {
   const project = await leesProject(req.params.id);
   const data = normaliseer(req.body, project.naam);
   const map = projectPad(req.params.id);
@@ -853,7 +1029,7 @@ app.get("/api/instellingen", async (req, res) => {
   res.json({ studionaam: instellingen.studionaam || "", logo });
 });
 
-app.patch("/api/instellingen", async (req, res) => {
+app.patch("/api/instellingen", vereistRecht("instellingen"), async (req, res) => {
   const instellingen = await leesInstellingen();
   instellingen.studionaam = String(req.body.studionaam || "").trim().slice(0, 60);
   await schrijfInstellingen(instellingen);
@@ -865,7 +1041,7 @@ const uploadLogo = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // max 5 MB
 });
 
-app.post("/api/instellingen/logo", uploadLogo.single("logo"), async (req, res) => {
+app.post("/api/instellingen/logo", vereistRecht("instellingen"), uploadLogo.single("logo"), async (req, res) => {
   if (!req.file) return res.status(400).json({ fout: "Geen bestand ontvangen." });
   const ext = LOGO_TYPES[req.file.mimetype];
   if (!ext) return res.status(400).json({ fout: "Alleen PNG, JPG, SVG of WEBP toegestaan." });
@@ -876,7 +1052,7 @@ app.post("/api/instellingen/logo", uploadLogo.single("logo"), async (req, res) =
   res.json({ ok: true });
 });
 
-app.delete("/api/instellingen/logo", async (req, res) => {
+app.delete("/api/instellingen/logo", vereistRecht("instellingen"), async (req, res) => {
   const oud = await vindLogoBestand();
   if (oud) await fs.unlink(path.join(DATA_MAP, oud));
   res.json({ ok: true });
@@ -894,7 +1070,7 @@ app.get("/api/instellingen/stijlgids", async (req, res) => {
   res.json(ruw ? normaliseer(ruw, "") : standaardStijlgids(""));
 });
 
-app.put("/api/instellingen/stijlgids", async (req, res) => {
+app.put("/api/instellingen/stijlgids", vereistRecht("instellingen"), async (req, res) => {
   const data = normaliseer(req.body, "");
   data.naam = "";
   for (const veld in data.context) data.context[veld] = "";
@@ -904,7 +1080,7 @@ app.put("/api/instellingen/stijlgids", async (req, res) => {
   res.json({ data });
 });
 
-app.delete("/api/instellingen/stijlgids", async (req, res) => {
+app.delete("/api/instellingen/stijlgids", vereistRecht("instellingen"), async (req, res) => {
   try {
     await fs.unlink(STIJLGIDS_STANDAARD_BESTAND);
   } catch {
@@ -914,7 +1090,7 @@ app.delete("/api/instellingen/stijlgids", async (req, res) => {
 });
 
 // Stijlgids van een bestaand project overnemen als standaard
-app.post("/api/instellingen/stijlgids/overnemen", async (req, res) => {
+app.post("/api/instellingen/stijlgids/overnemen", vereistRecht("instellingen"), async (req, res) => {
   let project;
   try {
     project = await leesProject(req.body.projectId || "");

@@ -30,6 +30,11 @@ const MAPPEN = {
   stijlgids:  { label: "Stijlgids",    icoon: "palette" },
 };
 
+const KLANT_MAPPEN = {
+  images:     { label: "Afbeeldingen", icoon: "image" },
+  documenten: { label: "Documenten",   icoon: "file-text" },
+};
+
 const SORTERINGEN = {
   bijgewerkt: "Laatst bijgewerkt",
   deadline: "Deadline",
@@ -45,6 +50,7 @@ let huidigePagina = "dashboard";
 let openProjectId = null;
 let openKlantId = null;
 let bestanden = null;
+let klantBestanden = null;
 let zoekterm = "";
 let actiefFilter = "";       // filter op het dashboard
 let projectFilter = "";      // filter op de pagina Projecten
@@ -55,6 +61,14 @@ let standaardStijl = null;   // standaard stijlgids, voor het mini-voorbeeld op 
 let paden = null;            // paden van projecten/ en data/, voor Instellingen
 let ingelogdeGebruiker = null;
 let gebruikers = [];          // alleen geladen voor de pagina Gebruikers (beheerder)
+let rechten = null;           // rechten van de rol Medewerker, alleen geladen voor beheerders
+
+const RECHTEN_LABELS = {
+  projecten: "Projecten aanmaken, bewerken en verwijderen",
+  klanten: "Klanten aanmaken, bewerken en verwijderen",
+  stijlgidsen: "Stijlgidsen opslaan",
+  instellingen: "Instellingen aanpassen (studio, standaard stijlgids, opslag)",
+};
 
 const geschiedenis = { terug: [], vooruit: [] };
 
@@ -83,6 +97,11 @@ function esc(tekst) {
   return String(tekst ?? "").replace(/[&<>"']/g, (t) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[t]));
+}
+
+// Mag de ingelogde gebruiker dit? (vóór de sessie geladen is, of voor beheerders: altijd ja)
+function magIk(naam) {
+  return ingelogdeGebruiker?.rechten?.[naam] !== false;
 }
 
 function geleden(datum) {
@@ -184,6 +203,7 @@ function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "proje
   modus = projectId ? nieuweModus : "project";
   stijlgidsBron = "project";
   bestanden = null;
+  klantBestanden = null;
   stijlgids = null;
 
   document.querySelectorAll(".nav__item").forEach((item) => {
@@ -193,6 +213,7 @@ function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "proje
   render();
   if (projectId && modus === "project") laadBestanden();
   if (projectId && modus === "stijlgids") laadStijlgids();
+  if (!projectId && openKlantId) laadKlantBestanden();
   if (pagina === "instellingen" && !projectId) laadInstellingenStijlgids();
   if (pagina === "gebruikers" && !projectId) laadGebruikers();
   window.scrollTo(0, 0);
@@ -490,6 +511,60 @@ async function verwijderBestand(map, naam) {
   }
 }
 
+async function laadKlantBestanden() {
+  if (!openKlantId) return;
+  try {
+    klantBestanden = await api(`/api/klanten/${openKlantId}/bestanden`);
+  } catch (fout) {
+    toast(fout.message, "fout");
+    klantBestanden = {};
+  }
+  render();
+}
+
+async function openKlantMap(id) {
+  try {
+    await api(`/api/klanten/${id}/open`, { method: "POST" });
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function uploadKlantBestanden(lijst) {
+  if (!lijst.length || !openKlantId) return;
+
+  const formData = new FormData();
+  for (const bestand of lijst) formData.append("bestanden", bestand);
+
+  toast(`${lijst.length} ${lijst.length === 1 ? "bestand" : "bestanden"} uploaden…`);
+
+  try {
+    const res = await fetch(`/api/klanten/${openKlantId}/bestanden`, {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.fout || "Uploaden mislukt.");
+
+    toast(`${data.aantal} ${data.aantal === 1 ? "bestand" : "bestanden"} geüpload`);
+    await laadKlantBestanden();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function verwijderKlantBestand(map, naam) {
+  try {
+    await api(`/api/klanten/${openKlantId}/bestanden/${map}/${encodeURIComponent(naam)}`, {
+      method: "DELETE",
+    });
+    toast(`"${naam}" naar de prullenbak verplaatst`);
+    await laadKlantBestanden();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
 async function verwijderKlant(id) {
   try {
     await api(`/api/klanten/${id}`, { method: "DELETE" });
@@ -744,11 +819,11 @@ function bestandKaart(map, bestand) {
   `;
 }
 
-function mapPaneel(key, map) {
-  const lijst = bestanden?.[key];
+function mapPaneel(key, map, bron) {
+  const lijst = bron?.[key];
 
   let inhoud;
-  if (!bestanden) inhoud = `<p class="muted klein">Laden…</p>`;
+  if (!bron) inhoud = `<p class="muted klein">Laden…</p>`;
   else if (!lijst || !lijst.length) inhoud = `<p class="muted klein">Nog geen bestanden.</p>`;
   else inhoud = `<div class="bestand-grid">${lijst.map((b) => bestandKaart(key, b)).join("")}</div>`;
 
@@ -816,9 +891,10 @@ function renderDashboard() {
           <h2>${filterLabel}</h2>
           ${actiefFilter ? `<button class="chip" data-filter="">Filter wissen <i data-lucide="x"></i></button>` : ""}
         </div>
+        ${magIk("projecten") ? `
         <button class="btn btn--primary" id="nieuw-project">
           <i data-lucide="plus"></i> Nieuw project
-        </button>
+        </button>` : ""}
       </header>
 
       <div class="project-lijst">
@@ -858,9 +934,10 @@ function renderProjecten() {
           <i data-lucide="arrow-up-down"></i>
           <select id="sortering" aria-label="Sorteren">${sorteerOpties}</select>
         </label>
+        ${magIk("projecten") ? `
         <button class="btn btn--primary" id="nieuw-project">
           <i data-lucide="plus"></i> Nieuw project
-        </button>
+        </button>` : ""}
       </div>
     </div>
 
@@ -903,9 +980,10 @@ function renderKlanten() {
   content.innerHTML = `
     <div class="toolbar">
       <p class="muted">${lijst.length} ${lijst.length === 1 ? "klant" : "klanten"}</p>
+      ${magIk("klanten") ? `
       <button class="btn btn--primary" data-nieuwe-klant>
         <i data-lucide="user-plus"></i> Nieuwe klant
-      </button>
+      </button>` : ""}
     </div>
 
     ${lijst.length
@@ -946,6 +1024,9 @@ function renderKlant() {
           <h2>${esc(klant.naam)}</h2>
         </div>
         <div class="detail__acties">
+          <button class="btn btn--ghost" data-klant-open="${esc(klant.id)}">
+            <i data-lucide="folder-open"></i> Open map
+          </button>
           <button class="btn btn--ghost" data-klant-weg="${esc(klant.id)}">
             <i data-lucide="trash-2"></i> Verwijderen
           </button>
@@ -995,6 +1076,17 @@ function renderKlant() {
           : legeStaat("folder-plus", "Nog geen projecten", `Klik op Nieuw project om iets voor ${esc(klant.naam)} te starten.`)}
       </div>
     </section>
+
+    <label class="dropzone" id="dropzone">
+      <input type="file" multiple id="upload-input" hidden>
+      <div class="icon-tile"><i data-lucide="upload"></i></div>
+      <p><strong>Sleep bestanden hierheen</strong> of klik om te kiezen</p>
+      <p class="muted klein">Aangeleverde content, contracten, facturen — afbeeldingen gaan naar images, de rest naar documenten.</p>
+    </label>
+
+    <div class="mappen">
+      ${Object.entries(KLANT_MAPPEN).map(([key, map]) => mapPaneel(key, map, klantBestanden)).join("")}
+    </div>
   `;
 }
 
@@ -1013,10 +1105,23 @@ function miniPaletFonts(stijl) {
 
 async function laadGebruikers() {
   try {
-    gebruikers = await api("/api/gebruikers");
+    [gebruikers, rechten] = await Promise.all([
+      api("/api/gebruikers"),
+      api("/api/rechten"),
+    ]);
     render();
   } catch (fout) {
     toast(fout.message, "fout");
+  }
+}
+
+async function wijzigRecht(naam, aan) {
+  try {
+    rechten = await api("/api/rechten", { method: "PATCH", body: JSON.stringify({ [naam]: aan }) });
+    toast("Opgeslagen");
+  } catch (fout) {
+    toast(fout.message, "fout");
+    await laadGebruikers();
   }
 }
 
@@ -1075,6 +1180,22 @@ function renderGebruikers() {
         ${gebruikers.length
           ? gebruikers.map(gebruikerRij).join("")
           : legeStaat("user-cog", "Nog geen collega's", "Maak een account aan voor iedereen die moet inloggen.")}
+      </div>
+    </section>
+
+    <section class="panel instellingen-paneel">
+      <header class="panel__head">
+        <div class="panel__titel"><i data-lucide="shield-check"></i><h2>Rechten voor Medewerker</h2></div>
+      </header>
+      <p class="muted klein">Beheerders kunnen altijd alles. Hieronder stel je in wat de rol Medewerker mag aanpassen — bekijken kan altijd.</p>
+
+      <div class="rechten-lijst">
+        ${rechten ? Object.entries(RECHTEN_LABELS).map(([naam, label]) => `
+          <label class="rechten-rij">
+            <input type="checkbox" data-recht="${naam}" ${rechten[naam] ? "checked" : ""}>
+            <span>${esc(label)}</span>
+          </label>
+        `).join("") : `<p class="muted klein">Laden…</p>`}
       </div>
     </section>
   `;
@@ -1137,6 +1258,8 @@ async function verwijderGebruiker(id) {
 }
 
 function renderInstellingen() {
+  const magBewerken = magIk("instellingen");
+
   content.innerHTML = `
     <section class="panel instellingen-paneel">
       <header class="panel__head">
@@ -1145,11 +1268,12 @@ function renderInstellingen() {
 
       <label class="veld">
         <span>Studionaam</span>
-        <input class="ed-input" id="studionaam-invoer" type="text" placeholder="studio" value="${esc(instellingen.studionaam)}">
+        <input class="ed-input" id="studionaam-invoer" type="text" placeholder="studio" value="${esc(instellingen.studionaam)}" ${magBewerken ? "" : "disabled"}>
       </label>
 
       <div class="instellingen-logo">
         <span class="logo-mark ${instellingen.logo ? "logo-mark--afbeelding" : ""}" style="${instellingen.logo ? `background-image:url('${esc(instellingen.logo)}')` : ""}"></span>
+        ${magBewerken ? `
         <div class="instellingen-logo__acties">
           <input type="file" id="logo-invoer" accept=".png,.jpg,.jpeg,.svg,.webp" hidden>
           <button type="button" class="btn btn--ghost" id="logo-kiezen">
@@ -1159,7 +1283,7 @@ function renderInstellingen() {
           <button type="button" class="btn btn--ghost" id="logo-weg">
             <i data-lucide="trash-2"></i> Verwijderen
           </button>` : ""}
-        </div>
+        </div>` : ""}
       </div>
       <p class="muted klein">PNG, JPG, SVG of WEBP, max 5 MB. Vervangt het gekleurde vierkantje in de zijbalk.</p>
     </section>
@@ -1172,6 +1296,7 @@ function renderInstellingen() {
 
       <div class="instellingen-voorbeeld">${miniPaletFonts(standaardStijl)}</div>
 
+      ${magBewerken ? `
       <div class="detail__acties">
         <button type="button" class="btn btn--primary" id="standaard-bewerken">
           <i data-lucide="pencil-ruler"></i> Bewerken
@@ -1182,7 +1307,7 @@ function renderInstellingen() {
         <button type="button" class="btn btn--ghost" id="standaard-reset">
           <i data-lucide="rotate-ccw"></i> Terugzetten naar app-standaard
         </button>
-      </div>
+      </div>` : ""}
     </section>
 
     <section class="panel instellingen-paneel">
@@ -1290,7 +1415,7 @@ function renderProject() {
     </label>
 
     <div class="mappen">
-      ${Object.entries(MAPPEN).map(([key, map]) => mapPaneel(key, map)).join("")}
+      ${Object.entries(MAPPEN).map(([key, map]) => mapPaneel(key, map, bestanden)).join("")}
     </div>
   `;
 }
@@ -1596,6 +1721,9 @@ content.addEventListener("click", (e) => {
     return openKlantFormulier(klanten.find((k) => k.id === openKlantId));
   }
 
+  const klantOpenKnop = e.target.closest("[data-klant-open]");
+  if (klantOpenKnop) return openKlantMap(klantOpenKnop.dataset.klantOpen);
+
   if (e.target.closest("[data-klant-project]")) {
     const klant = klanten.find((k) => k.id === openKlantId);
     return openProjectFormulier(null, { klant: klant?.naam || "" });
@@ -1641,7 +1769,10 @@ content.addEventListener("click", (e) => {
 
   // Bestand verwijderen
   const weg = e.target.closest("[data-verwijder]");
-  if (weg) return bevestigKlik(weg, () => verwijderBestand(weg.dataset.verwijder, weg.dataset.naam));
+  if (weg) {
+    const actie = openKlantId ? verwijderKlantBestand : verwijderBestand;
+    return bevestigKlik(weg, () => actie(weg.dataset.verwijder, weg.dataset.naam));
+  }
 });
 
 // Dropdowns en bestandskiezer
@@ -1652,13 +1783,16 @@ content.addEventListener("change", (e) => {
   const rolSelectEl = e.target.closest("[data-rol-voor]");
   if (rolSelectEl) return wijzigGebruikerRol(rolSelectEl.dataset.rolVoor, rolSelectEl.value);
 
+  const rechtVink = e.target.closest("[data-recht]");
+  if (rechtVink) return wijzigRecht(rechtVink.dataset.recht, rechtVink.checked);
+
   if (e.target.id === "sortering") {
     sortering = e.target.value;
     return render();
   }
 
   if (e.target.id === "upload-input") {
-    uploadBestanden(e.target.files);
+    (openKlantId ? uploadKlantBestanden : uploadBestanden)(e.target.files);
     e.target.value = "";
   }
 
@@ -1688,7 +1822,7 @@ content.addEventListener("drop", (e) => {
   const zone = e.target.closest("#dropzone");
   if (!zone) return;
   zone.classList.remove("is-over");
-  uploadBestanden(e.dataTransfer.files);
+  (openKlantId ? uploadKlantBestanden : uploadBestanden)(e.dataTransfer.files);
 });
 
 // Zoeken: werkt op Dashboard, Projecten, Stijlgidsen en Klanten

@@ -1635,6 +1635,24 @@ textarea.ed-input { resize: vertical; line-height: 1.5; }
 .info-grid--paden { margin-bottom: 16px; }
 .info-grid--paden code { word-break: break-all; }
 
+.rechten-lijst {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 16px;
+}
+.rechten-rij {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+}
+.rechten-rij input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
 /* Inlogpagina */
 body.login-pagina {
   display: flex;
