@@ -48,6 +48,7 @@ let stijlgids = null;
 let stijlgidsGewijzigd = false;
 let voorbeeldTimer = null;
 const dichtePanelen = new Set();
+let stijlgidsBron = "project"; // "project" of "standaard" (zie instellingen)
 
 // ---------- Oude of onvolledige stijlgids aanvullen ----------
 
@@ -91,7 +92,10 @@ async function laadStijlgids() {
   stijlgids = null;
   render();
   try {
-    stijlgids = maakVolledig(await api(`/api/projecten/${openProjectId}/stijlgids`));
+    const url = stijlgidsBron === "standaard"
+      ? "/api/instellingen/stijlgids"
+      : `/api/projecten/${openProjectId}/stijlgids`;
+    stijlgids = maakVolledig(await api(url));
     stijlgidsGewijzigd = false;
     render();
   } catch (fout) {
@@ -100,30 +104,46 @@ async function laadStijlgids() {
 }
 
 async function slaStijlgidsOp() {
+  const standaard = stijlgidsBron === "standaard";
   const knop = document.querySelector("[data-stijlgids-opslaan]");
   if (knop) {
     knop.disabled = true;
-    knop.innerHTML = `<i data-lucide="loader"></i> Bestanden maken…`;
+    knop.innerHTML = standaard
+      ? `<i data-lucide="loader"></i> Opslaan…`
+      : `<i data-lucide="loader"></i> Bestanden maken…`;
     lucide.createIcons();
   }
 
   try {
-    const res = await api(`/api/projecten/${openProjectId}/stijlgids`, {
-      method: "PUT",
-      body: JSON.stringify(stijlgids),
-    });
-    stijlgids = maakVolledig(res.data);
-    stijlgidsGewijzigd = false;
+    if (standaard) {
+      const res = await api("/api/instellingen/stijlgids", {
+        method: "PUT",
+        body: JSON.stringify(stijlgids),
+      });
+      stijlgids = maakVolledig(res.data);
+      stijlgidsGewijzigd = false;
+      toast("Standaard stijlgids opgeslagen");
+      standaardStijl = stijlgids;
+    } else {
+      const res = await api(`/api/projecten/${openProjectId}/stijlgids`, {
+        method: "PUT",
+        body: JSON.stringify(stijlgids),
+      });
+      stijlgids = maakVolledig(res.data);
+      stijlgidsGewijzigd = false;
 
-    if (res.waarschuwing) toast(res.waarschuwing, "fout");
-    else toast(`Opgeslagen: ${res.bestanden.length} bestanden gemaakt`);
+      if (res.waarschuwing) toast(res.waarschuwing, "fout");
+      else toast(`Opgeslagen: ${res.bestanden.length} bestanden gemaakt`);
 
-    await laadProjecten();
+      await laadProjecten();
+    }
   } catch (fout) {
     toast(fout.message, "fout");
     if (knop && knop.isConnected) {
       knop.disabled = false;
-      knop.innerHTML = `<i data-lucide="save"></i> Opslaan en bestanden maken`;
+      knop.innerHTML = standaard
+        ? `<i data-lucide="save"></i> Opslaan`
+        : `<i data-lucide="save"></i> Opslaan en bestanden maken`;
       lucide.createIcons();
     }
   }
@@ -196,10 +216,11 @@ function rij(label, veld) {
 
 function editorPanelen() {
   const s = stijlgids;
+  const standaard = stijlgidsBron === "standaard";
 
-  // Merk
+  // Merk (bij de standaard is er geen vaste naam, alleen een slogan als voorbeeldtekst)
   const merk = `
-    ${rij("Naam", `<input class="ed-input" type="text" data-veld="naam" value="${esc(s.naam)}">`)}
+    ${standaard ? "" : rij("Naam", `<input class="ed-input" type="text" data-veld="naam" value="${esc(s.naam)}">`)}
     ${rij("Slogan", `<input class="ed-input" type="text" data-veld="slogan" value="${esc(s.slogan)}">`)}
   `;
 
@@ -268,13 +289,14 @@ function editorPanelen() {
   const fontTeller = `<span class="ed-teller">${s.fonts.length}</span>`;
   const kleurTeller = `<span class="ed-teller">${s.kleuren.length}</span>`;
 
-  return [
-    paneel("merk", "Merk", merk),
-    paneel("context", "Over het merk", context, contextTeller),
+  const panelen = [paneel("merk", "Merk", merk)];
+  if (!standaard) panelen.push(paneel("context", "Over het merk", context, contextTeller));
+  panelen.push(
     paneel("kleuren", "Kleuren", kleuren, kleurTeller),
     paneel("typografie", "Typografie", typografie, fontTeller),
-    paneel("knoppen", "Knoppen", knoppen),
-  ].join("");
+    paneel("knoppen", "Knoppen", knoppen)
+  );
+  return panelen.join("");
 }
 
 function renderEditor() {
@@ -283,17 +305,21 @@ function renderEditor() {
     return;
   }
 
-  const p = projecten.find((x) => x.id === openProjectId);
+  const standaard = stijlgidsBron === "standaard";
+  const p = standaard ? null : projecten.find((x) => x.id === openProjectId);
+  const terugTekst = standaard ? "Instellingen" : (p?.naam || "Project");
+  const balkTekst = standaard ? "standaard stijlgids" : `projecten/${esc(openProjectId)}/site/index.html`;
+  const knopTekst = standaard ? "Opslaan" : "Opslaan en bestanden maken";
 
   content.innerHTML = `
     <div class="editor-kop">
       <button class="terug-link" data-terug-project>
-        <i data-lucide="arrow-left"></i> ${esc(p?.naam || "Project")}
+        <i data-lucide="arrow-left"></i> ${esc(terugTekst)}
       </button>
       <div class="editor-kop__acties">
         <span class="muted klein" id="opslaan-status">${stijlgidsGewijzigd ? "Niet opgeslagen wijzigingen" : "Alles opgeslagen"}</span>
         <button class="btn btn--primary" data-stijlgids-opslaan>
-          <i data-lucide="save"></i> Opslaan en bestanden maken
+          <i data-lucide="save"></i> ${knopTekst}
         </button>
       </div>
     </div>
@@ -308,7 +334,7 @@ function renderEditor() {
           <span class="dot dot--red"></span>
           <span class="dot dot--yellow"></span>
           <span class="dot dot--green"></span>
-          <span class="voorbeeld-balk__url">projecten/${esc(openProjectId)}/site/index.html</span>
+          <span class="voorbeeld-balk__url">${esc(balkTekst)}</span>
         </div>
         <iframe id="voorbeeld" title="Voorbeeld van de stijlgids-website"></iframe>
       </div>
@@ -448,7 +474,8 @@ content.addEventListener("click", (e) => {
   if (e.target.closest("[data-stijlgids-opslaan]")) return slaStijlgidsOp();
 
   if (e.target.closest("[data-terug-project]")) {
-    gaNaar(huidigePagina, openProjectId);
+    if (stijlgidsBron === "standaard") gaNaar("instellingen");
+    else gaNaar(huidigePagina, openProjectId);
   }
 });
 

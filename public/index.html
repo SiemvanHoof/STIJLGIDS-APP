@@ -25,6 +25,12 @@
         <span>studio</span>
       </div>
 
+      <button class="sidebar__profiel" id="profiel-knop" hidden>
+        <span id="profiel-avatar"></span>
+        <span class="profiel-naam" id="profiel-naam"></span>
+        <span class="profiel-rol" id="profiel-rol"></span>
+      </button>
+
       <div class="sidebar__divider"></div>
 
       <label class="search">
@@ -48,10 +54,20 @@
         <a href="#" class="nav__item" data-page="klanten">
           <i data-lucide="users"></i> Klanten
         </a>
+        <a href="#" class="nav__item" data-page="gebruikers" id="nav-gebruikers" hidden>
+          <i data-lucide="user-cog"></i> Gebruikers
+        </a>
         <a href="#" class="nav__item" data-page="instellingen">
           <i data-lucide="settings"></i> Instellingen
         </a>
       </nav>
+
+      <div class="sidebar__voet">
+        <div class="sidebar__divider"></div>
+        <button class="nav__item" id="uitlog-knop">
+          <i data-lucide="log-out"></i> Uitloggen
+        </button>
+      </div>
     </aside>
 
     <!-- HOOFDVLAK -->

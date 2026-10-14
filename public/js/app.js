@@ -15,7 +15,13 @@ const PAGINAS = {
   projecten:    "Projecten",
   stijlgidsen:  "Stijlgidsen",
   klanten:      "Klanten",
+  gebruikers:   "Gebruikers",
   instellingen: "Instellingen",
+};
+
+const ROLLEN = {
+  beheerder: "Beheerder",
+  medewerker: "Medewerker",
 };
 
 const MAPPEN = {
@@ -30,15 +36,25 @@ const SORTERINGEN = {
   naam: "Naam (A–Z)",
 };
 
+// Zachte kleuren voor de rondjes met initialen
+const AVATAR_KLEUREN = ["#F3D9CF", "#DCE8F5", "#E3F0DD", "#F5EBCF", "#EADCF2", "#D8EFEC", "#F2DCE4"];
+
 let projecten = [];
+let klanten = [];
 let huidigePagina = "dashboard";
 let openProjectId = null;
+let openKlantId = null;
 let bestanden = null;
 let zoekterm = "";
 let actiefFilter = "";       // filter op het dashboard
 let projectFilter = "";      // filter op de pagina Projecten
 let sortering = "bijgewerkt";
 let modus = "project"; // "project" of "stijlgids"
+let instellingen = { studionaam: "", logo: null };
+let standaardStijl = null;   // standaard stijlgids, voor het mini-voorbeeld op Instellingen
+let paden = null;            // paden van projecten/ en data/, voor Instellingen
+let ingelogdeGebruiker = null;
+let gebruikers = [];          // alleen geladen voor de pagina Gebruikers (beheerder)
 
 const geschiedenis = { terug: [], vooruit: [] };
 
@@ -54,6 +70,10 @@ async function api(url, opties = {}) {
     headers: { "Content-Type": "application/json" },
     ...opties,
   });
+  if (res.status === 401) {
+    window.location.href = "/login.html";
+    throw new Error("Niet ingelogd.");
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.fout || "Er ging iets mis.");
   return data;
@@ -109,8 +129,8 @@ function bestandIcoon(naam) {
   return "file";
 }
 
-function tel(status) {
-  return projecten.filter((p) => p.status === status).length;
+function tel(status, lijst = projecten) {
+  return lijst.filter((p) => p.status === status).length;
 }
 
 function toast(tekst, soort = "ok") {
@@ -122,13 +142,37 @@ function toast(tekst, soort = "ok") {
   setTimeout(() => el.remove(), 2600);
 }
 
+// "Lisa de Vries" → "LV"
+function initialen(naam) {
+  const woorden = String(naam || "?").trim().split(/\s+/).filter(Boolean);
+  const letters = woorden.length > 1
+    ? woorden[0][0] + woorden[woorden.length - 1][0]
+    : (woorden[0] || "?").slice(0, 2);
+  return letters.toUpperCase();
+}
+
+// Altijd dezelfde kleur voor dezelfde naam
+function avatarKleur(naam) {
+  let som = 0;
+  for (const letter of String(naam)) som += letter.charCodeAt(0);
+  return AVATAR_KLEUREN[som % AVATAR_KLEUREN.length];
+}
+
+function websiteUrl(adres) {
+  return /^https?:\/\//i.test(adres) ? adres : `https://${adres}`;
+}
+
+function projectenVanKlant(klantId) {
+  return projecten.filter((p) => p.klantId === klantId);
+}
+
 // ---------- Navigatie ----------
 
 function huidigeStand() {
-  return { pagina: huidigePagina, projectId: openProjectId, modus };
+  return { pagina: huidigePagina, projectId: openProjectId, klantId: openKlantId, modus };
 }
 
-function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "project" } = {}) {
+function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "project", klantId = null } = {}) {
   if (opslaan) {
     geschiedenis.terug.push(huidigeStand());
     geschiedenis.vooruit = [];
@@ -136,7 +180,9 @@ function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "proje
 
   huidigePagina = pagina;
   openProjectId = projectId;
+  openKlantId = projectId ? null : klantId;
   modus = projectId ? nieuweModus : "project";
+  stijlgidsBron = "project";
   bestanden = null;
   stijlgids = null;
 
@@ -147,32 +193,232 @@ function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "proje
   render();
   if (projectId && modus === "project") laadBestanden();
   if (projectId && modus === "stijlgids") laadStijlgids();
+  if (pagina === "instellingen" && !projectId) laadInstellingenStijlgids();
+  if (pagina === "gebruikers" && !projectId) laadGebruikers();
   window.scrollTo(0, 0);
+}
+
+function gaNaarStand(stand) {
+  gaNaar(stand.pagina, stand.projectId, {
+    opslaan: false,
+    nieuweModus: stand.modus,
+    klantId: stand.klantId,
+  });
 }
 
 knopTerug.addEventListener("click", () => {
   const vorige = geschiedenis.terug.pop();
   if (!vorige) return;
   geschiedenis.vooruit.push(huidigeStand());
-  gaNaar(vorige.pagina, vorige.projectId, { opslaan: false, nieuweModus: vorige.modus });
+  gaNaarStand(vorige);
 });
 
 knopVooruit.addEventListener("click", () => {
   const volgende = geschiedenis.vooruit.pop();
   if (!volgende) return;
   geschiedenis.terug.push(huidigeStand());
-  gaNaar(volgende.pagina, volgende.projectId, { opslaan: false, nieuweModus: volgende.modus });
+  gaNaarStand(volgende);
 });
 
 // ---------- Data ----------
 
 async function laadProjecten() {
   try {
+    // Eerst projecten (die koppelen oude projecten aan klanten), daarna klanten
     projecten = await api("/api/projecten");
+    klanten = await api("/api/klanten");
   } catch (fout) {
     toast(fout.message, "fout");
   }
   render();
+}
+
+async function laadSessie() {
+  try {
+    const sessie = await api("/api/sessie");
+    if (!sessie.ingelogd) {
+      window.location.href = "/login.html";
+      return;
+    }
+    ingelogdeGebruiker = sessie.gebruiker;
+    toepassenProfiel();
+  } catch {
+    // api() heeft bij 401 al doorgestuurd naar /login.html
+  }
+}
+
+function toepassenProfiel() {
+  if (!ingelogdeGebruiker) return;
+
+  const knop = document.getElementById("profiel-knop");
+  document.getElementById("profiel-avatar").innerHTML = avatar(ingelogdeGebruiker.naam);
+  document.getElementById("profiel-naam").textContent = ingelogdeGebruiker.naam;
+  document.getElementById("profiel-rol").textContent = ROLLEN[ingelogdeGebruiker.rol] || ingelogdeGebruiker.rol;
+  knop.hidden = false;
+
+  document.getElementById("nav-gebruikers").hidden = ingelogdeGebruiker.rol !== "beheerder";
+  lucide.createIcons();
+}
+
+async function uitloggen() {
+  try {
+    await api("/api/logout", { method: "POST" });
+  } catch {
+    // negeren, we gaan sowieso naar de inlogpagina
+  }
+  window.location.href = "/login.html";
+}
+
+function openWachtwoordFormulier() {
+  openModal({
+    kop: "Wachtwoord wijzigen",
+    knop: "Opslaan",
+    inhoud: `
+      <label class="veld">
+        <span>Huidig wachtwoord</span>
+        <input name="huidig" type="password" required autocomplete="current-password">
+      </label>
+      <label class="veld">
+        <span>Nieuw wachtwoord</span>
+        <input name="nieuw" type="password" required minlength="8" autocomplete="new-password">
+      </label>
+      <p class="muted klein">Minstens 8 tekens.</p>
+    `,
+    opslaan: async (data) => {
+      await api("/api/account/wachtwoord", { method: "PATCH", body: JSON.stringify(data) });
+      toast("Wachtwoord gewijzigd");
+    },
+  });
+}
+
+async function laadInstellingen() {
+  try {
+    instellingen = await api("/api/instellingen");
+    toepassenInstellingen();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+function toepassenInstellingen() {
+  document.title = instellingen.studionaam
+    ? `${instellingen.studionaam} — Studio Dashboard`
+    : "Studio Dashboard";
+
+  const naamEl = document.querySelector(".sidebar__logo span");
+  if (naamEl) naamEl.textContent = instellingen.studionaam || "studio";
+
+  const logoEl = document.querySelector(".sidebar__logo .logo-mark");
+  if (logoEl) {
+    logoEl.classList.toggle("logo-mark--afbeelding", Boolean(instellingen.logo));
+    logoEl.style.backgroundImage = instellingen.logo ? `url('${instellingen.logo}')` : "";
+  }
+}
+
+async function laadPaden() {
+  try {
+    paden = await api("/api/instellingen/paden");
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function laadInstellingenStijlgids() {
+  try {
+    standaardStijl = await api("/api/instellingen/stijlgids");
+    if (huidigePagina === "instellingen" && !openProjectId) render();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+function bewerkStandaardStijlgids() {
+  stijlgidsBron = "standaard";
+  modus = "stijlgids";
+  openProjectId = null;
+  openKlantId = null;
+  render();
+  laadStijlgids();
+}
+
+async function slaStudionaamOp(waarde) {
+  try {
+    await api("/api/instellingen", { method: "PATCH", body: JSON.stringify({ studionaam: waarde }) });
+    instellingen.studionaam = waarde.trim();
+    toepassenInstellingen();
+    toast("Studionaam opgeslagen");
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function uploadLogo(bestand) {
+  if (!bestand) return;
+  const formData = new FormData();
+  formData.append("logo", bestand);
+
+  try {
+    const res = await fetch("/api/instellingen/logo", { method: "POST", body: formData });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.fout || "Uploaden mislukt.");
+    toast("Logo geüpload");
+    await laadInstellingen();
+    render();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function verwijderLogo() {
+  try {
+    await api("/api/instellingen/logo", { method: "DELETE" });
+    toast("Logo verwijderd");
+    await laadInstellingen();
+    render();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+function openOvernemenFormulier() {
+  if (!projecten.length) return toast("Je hebt nog geen projecten om van over te nemen.", "fout");
+
+  const opties = projecten.map((p) => `<option value="${esc(p.id)}">${esc(p.naam)}</option>`).join("");
+
+  openModal({
+    kop: "Stijlgids overnemen",
+    knop: "Overnemen",
+    inhoud: `
+      <label class="veld">
+        <span>Project</span>
+        <select name="projectId" required>${opties}</select>
+      </label>
+      <p class="muted klein">De kleuren, fonts en knoppen van dit project worden de nieuwe standaard voor nieuwe projecten.</p>
+    `,
+    opslaan: async (data) => {
+      await api("/api/instellingen/stijlgids/overnemen", { method: "POST", body: JSON.stringify(data) });
+      toast("Standaard stijlgids overgenomen");
+      await laadInstellingenStijlgids();
+    },
+  });
+}
+
+async function resetStandaardStijlgids() {
+  try {
+    await api("/api/instellingen/stijlgids", { method: "DELETE" });
+    toast("Teruggezet naar de app-standaard");
+    await laadInstellingenStijlgids();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function openOpslagMap(map) {
+  try {
+    await api("/api/instellingen/open-map", { method: "POST", body: JSON.stringify({ map }) });
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
 }
 
 async function laadBestanden() {
@@ -244,6 +490,17 @@ async function verwijderBestand(map, naam) {
   }
 }
 
+async function verwijderKlant(id) {
+  try {
+    await api(`/api/klanten/${id}`, { method: "DELETE" });
+    toast("Klant verwijderd");
+    gaNaar("klanten");
+    await laadProjecten();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
 // ---------- Filteren en sorteren ----------
 
 function gefilterdeProjecten(statusFilter = "") {
@@ -270,11 +527,11 @@ function sorteer(lijst) {
 
 // ---------- Onderdelen ----------
 
-function statKaart({ label, waarde, icoon, regelLabel, regelWaarde, kleur, filter }) {
+function statKaart({ label, waarde, icoon, regelLabel, regelWaarde, kleur, kaartKleur = "", filter }) {
   return `
-    <article class="stat">
+    <article class="stat ${kaartKleur ? `stat--${kaartKleur}` : ""}">
       <div class="stat__top">
-        <div class="icon-tile"><i data-lucide="${icoon}"></i></div>
+        <div class="icon-tile ${kaartKleur ? `icon-tile--${kaartKleur}` : ""}"><i data-lucide="${icoon}"></i></div>
         <div>
           <p class="stat__label">${label}</p>
           <p class="stat__value">${waarde}</p>
@@ -321,6 +578,10 @@ function deadlineTekst(project) {
   if (dagen === 0) return `<span class="text--red">Vandaag</span>`;
   if (dagen <= 7) return `<span class="text--yellow-dark">Nog ${dagen} ${dagen === 1 ? "dag" : "dagen"}</span>`;
   return `<span class="muted">${korteDatum(project.deadline)}</span>`;
+}
+
+function avatar(naam, groot = false) {
+  return `<span class="avatar ${groot ? "avatar--groot" : ""}" style="background:${avatarKleur(naam)}" aria-hidden="true">${esc(initialen(naam))}</span>`;
 }
 
 function projectRij(project) {
@@ -404,6 +665,53 @@ function stijlgidsKaart(project) {
             <i data-lucide="pencil-ruler"></i> Bewerken
           </button>
         </div>
+      </div>
+    </article>
+  `;
+}
+
+function contactRegels(klant) {
+  const regels = [];
+  if (klant.email) {
+    regels.push(`<li><i data-lucide="mail"></i><a href="mailto:${esc(klant.email)}">${esc(klant.email)}</a></li>`);
+  }
+  if (klant.telefoon) {
+    regels.push(`<li><i data-lucide="phone"></i><a href="tel:${esc(klant.telefoon.replace(/\s/g, ""))}">${esc(klant.telefoon)}</a></li>`);
+  }
+  if (klant.instagram) {
+    regels.push(`<li><i data-lucide="at-sign"></i><a href="https://instagram.com/${esc(klant.instagram)}" target="_blank" rel="noopener">${esc(klant.instagram)}</a></li>`);
+  }
+  if (klant.website) {
+    regels.push(`<li><i data-lucide="globe"></i><a href="${esc(websiteUrl(klant.website))}" target="_blank" rel="noopener">${esc(klant.website.replace(/^https?:\/\//i, ""))}</a></li>`);
+  }
+  return regels;
+}
+
+function klantKaart(klant) {
+  const eigen = projectenVanKlant(klant.id);
+  const regels = contactRegels(klant);
+  const tellers = Object.entries(STATUS)
+    .filter(([key]) => tel(key, eigen) > 0)
+    .map(([key, s]) => `<span class="status-pil status-pil--${s.kleur} status-pil--klein" title="${s.label}"><span class="dot dot--${s.kleur}"></span>${tel(key, eigen)}</span>`)
+    .join("");
+
+  return `
+    <article class="kkaart">
+      <button class="kkaart__kop" data-klant="${esc(klant.id)}">
+        ${avatar(klant.naam)}
+        <span class="kkaart__namen">
+          <span class="kkaart__naam">${esc(klant.naam)}</span>
+          <span class="muted klein">${esc(klant.bedrijf || "Geen bedrijf ingevuld")}</span>
+        </span>
+      </button>
+
+      ${regels.length
+        ? `<ul class="contact-lijst">${regels.join("")}</ul>`
+        : `<p class="muted klein">Nog geen contactgegevens.</p>`}
+
+      <div class="kkaart__voet">
+        <span class="muted klein">${eigen.length} ${eigen.length === 1 ? "project" : "projecten"}</span>
+        <span class="status-tellers">${tellers}</span>
       </div>
     </article>
   `;
@@ -495,11 +803,11 @@ function renderDashboard() {
       ${statKaart({ label: "Totaal projecten", waarde: projecten.length, icoon: "folder",
         regelLabel: "Wacht op klant", regelWaarde: tel("wacht-op-klant"), kleur: "red", filter: "" })}
       ${statKaart({ label: "Bezig", waarde: tel("bezig"), icoon: "loader",
-        regelLabel: "Deadline deze week", regelWaarde: dezeWeek, kleur: "blue", filter: "bezig" })}
+        regelLabel: "Deadline deze week", regelWaarde: dezeWeek, kleur: "blue", kaartKleur: "blue", filter: "bezig" })}
       ${statKaart({ label: "Klaar", waarde: tel("klaar"), icoon: "circle-check",
-        regelLabel: "Deze maand", regelWaarde: klaarDezeMaand, kleur: "green", filter: "klaar" })}
+        regelLabel: "Deze maand", regelWaarde: klaarDezeMaand, kleur: "green", kaartKleur: "green", filter: "klaar" })}
       ${statKaart({ label: "Nog beginnen", waarde: tel("nog-beginnen"), icoon: "clock",
-        regelLabel: "Zonder deadline", regelWaarde: zonderDeadline, kleur: "yellow", filter: "nog-beginnen" })}
+        regelLabel: "Zonder deadline", regelWaarde: zonderDeadline, kleur: "yellow", kaartKleur: "yellow", filter: "nog-beginnen" })}
     </div>
 
     <section class="panel">
@@ -586,6 +894,320 @@ function renderStijlgidsen() {
   `;
 }
 
+function renderKlanten() {
+  const term = zoekterm.trim().toLowerCase();
+  const lijst = klanten.filter((k) =>
+    !term || `${k.naam} ${k.bedrijf} ${k.email} ${k.instagram}`.toLowerCase().includes(term)
+  );
+
+  content.innerHTML = `
+    <div class="toolbar">
+      <p class="muted">${lijst.length} ${lijst.length === 1 ? "klant" : "klanten"}</p>
+      <button class="btn btn--primary" data-nieuwe-klant>
+        <i data-lucide="user-plus"></i> Nieuwe klant
+      </button>
+    </div>
+
+    ${lijst.length
+      ? `<div class="kaart-grid">${lijst.map(klantKaart).join("")}</div>`
+      : `<section class="panel">${legeStaat(
+          "users",
+          term ? "Geen klanten gevonden" : "Nog geen klanten",
+          term ? "Probeer een andere zoekterm." : "Voeg een klant toe, of vul bij een nieuw project een klantnaam in. Dan wordt de klant vanzelf aangemaakt."
+        )}</section>`}
+  `;
+}
+
+function renderKlant() {
+  const klant = klanten.find((k) => k.id === openKlantId);
+
+  if (!klant) {
+    content.innerHTML = `<section class="panel">${legeStaat(
+      "user-x",
+      "Klant niet gevonden",
+      "Misschien is deze klant verwijderd."
+    )}</section>`;
+    return;
+  }
+
+  const eigen = sorteer(projectenVanKlant(klant.id));
+  const regels = contactRegels(klant);
+
+  content.innerHTML = `
+    <button class="terug-link" data-nav="klanten">
+      <i data-lucide="arrow-left"></i> Alle klanten
+    </button>
+
+    <section class="panel detail">
+      <header class="detail__head">
+        ${avatar(klant.naam, true)}
+        <div class="detail__titel">
+          <p class="project__meta">${esc(klant.bedrijf || "Klant")}</p>
+          <h2>${esc(klant.naam)}</h2>
+        </div>
+        <div class="detail__acties">
+          <button class="btn btn--ghost" data-klant-weg="${esc(klant.id)}">
+            <i data-lucide="trash-2"></i> Verwijderen
+          </button>
+          <button class="btn btn--ghost" data-klant-bewerk>
+            <i data-lucide="pencil"></i> Bewerken
+          </button>
+          <button class="btn btn--primary" data-klant-project>
+            <i data-lucide="plus"></i> Nieuw project
+          </button>
+        </div>
+      </header>
+
+      <div class="klant-info">
+        <div>
+          <p class="sectie-label">Contact</p>
+          ${regels.length
+            ? `<ul class="contact-lijst">${regels.join("")}</ul>`
+            : `<p class="muted">Nog geen contactgegevens. Klik op Bewerken om ze toe te voegen.</p>`}
+        </div>
+        <div>
+          <p class="sectie-label">Notities</p>
+          ${klant.notities
+            ? `<p class="notities">${esc(klant.notities)}</p>`
+            : `<p class="muted">Geen notities.</p>`}
+        </div>
+      </div>
+
+      <dl class="info-grid">
+        <div><dt>Projecten</dt><dd>${eigen.length}</dd></div>
+        <div><dt>Bezig</dt><dd>${tel("bezig", eigen)}</dd></div>
+        <div><dt>Klaar</dt><dd>${tel("klaar", eigen)}</dd></div>
+        <div><dt>Klant sinds</dt><dd>${korteDatum(klant.aangemaakt)}</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <header class="panel__head">
+        <div class="panel__titel">
+          <i data-lucide="folder"></i>
+          <h2>Projecten</h2>
+          <span class="teller">${eigen.length}</span>
+        </div>
+      </header>
+      <div class="project-lijst">
+        ${eigen.length
+          ? eigen.map(projectRij).join("")
+          : legeStaat("folder-plus", "Nog geen projecten", `Klik op Nieuw project om iets voor ${esc(klant.naam)} te starten.`)}
+      </div>
+    </section>
+  `;
+}
+
+function miniPaletFonts(stijl) {
+  if (!stijl) return `<p class="muted klein">Laden…</p>`;
+  return `
+    <div class="palet-mini" aria-label="Kleuren">
+      ${stijl.kleuren.map((k) => `<span style="background:${esc(k.hex)}" title="${esc(k.hex)}"></span>`).join("")}
+    </div>
+    <p class="skaart__fonts">
+      <i data-lucide="type"></i>
+      <span>${stijl.fonts.map((f) => esc(f.font)).join(" · ")}</span>
+    </p>
+  `;
+}
+
+async function laadGebruikers() {
+  try {
+    gebruikers = await api("/api/gebruikers");
+    render();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+function rolSelect(gebruiker) {
+  const opties = Object.entries(ROLLEN)
+    .map(([key, label]) => `<option value="${key}" ${key === gebruiker.rol ? "selected" : ""}>${label}</option>`)
+    .join("");
+
+  return `
+    <label class="status-select status-select--rol">
+      <select data-rol-voor="${esc(gebruiker.id)}" aria-label="Rol van ${esc(gebruiker.naam)}">
+        ${opties}
+      </select>
+      <i data-lucide="chevron-down"></i>
+    </label>
+  `;
+}
+
+function gebruikerRij(gebruiker) {
+  const jijzelf = gebruiker.id === ingelogdeGebruiker?.id;
+
+  return `
+    <article class="project">
+      ${avatar(gebruiker.naam)}
+      <span class="project__info">
+        <span class="project__meta">${esc(gebruiker.email)}${jijzelf ? " · dit ben jij" : ""}</span>
+        <span class="project__naam">${esc(gebruiker.naam)}</span>
+      </span>
+      <div class="project__rechts">
+        <div class="project__acties">
+          ${rolSelect(gebruiker)}
+          <button class="icon-btn" data-gebruiker-weg="${esc(gebruiker.id)}" title="Verwijderen" ${jijzelf ? "disabled" : ""}>
+            <i data-lucide="trash-2"></i>
+          </button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderGebruikers() {
+  content.innerHTML = `
+    <section class="panel">
+      <header class="panel__head">
+        <div class="panel__titel">
+          <i data-lucide="user-cog"></i>
+          <h2>Gebruikers</h2>
+          <span class="teller">${gebruikers.length}</span>
+        </div>
+        <button class="btn btn--primary" data-nieuwe-gebruiker>
+          <i data-lucide="user-plus"></i> Nieuwe gebruiker
+        </button>
+      </header>
+
+      <div class="project-lijst">
+        ${gebruikers.length
+          ? gebruikers.map(gebruikerRij).join("")
+          : legeStaat("user-cog", "Nog geen collega's", "Maak een account aan voor iedereen die moet inloggen.")}
+      </div>
+    </section>
+  `;
+}
+
+function openGebruikerFormulier() {
+  const rolOpties = Object.entries(ROLLEN)
+    .map(([key, label]) => `<option value="${key}" ${key === "medewerker" ? "selected" : ""}>${label}</option>`)
+    .join("");
+
+  openModal({
+    kop: "Nieuwe gebruiker",
+    knop: "Aanmaken",
+    inhoud: `
+      <label class="veld">
+        <span>Naam</span>
+        <input name="naam" type="text" required>
+      </label>
+      <label class="veld">
+        <span>E-mail</span>
+        <input name="email" type="email" placeholder="naam@bedrijf.nl" required>
+      </label>
+      <label class="veld">
+        <span>Rol</span>
+        <select name="rol">${rolOpties}</select>
+      </label>
+      <label class="veld">
+        <span>Tijdelijk wachtwoord</span>
+        <input name="wachtwoord" type="password" required minlength="8" autocomplete="new-password">
+      </label>
+      <p class="muted klein">Geef dit wachtwoord door; de gebruiker kan het na het inloggen zelf wijzigen.</p>
+    `,
+    opslaan: async (data) => {
+      await api("/api/gebruikers", { method: "POST", body: JSON.stringify(data) });
+      toast(`${data.naam} aangemaakt`);
+      await laadGebruikers();
+    },
+  });
+}
+
+async function wijzigGebruikerRol(id, rol) {
+  try {
+    await api(`/api/gebruikers/${id}`, { method: "PATCH", body: JSON.stringify({ rol }) });
+    toast("Rol aangepast");
+    await laadGebruikers();
+  } catch (fout) {
+    toast(fout.message, "fout");
+    await laadGebruikers();
+  }
+}
+
+async function verwijderGebruiker(id) {
+  try {
+    await api(`/api/gebruikers/${id}`, { method: "DELETE" });
+    toast("Gebruiker verwijderd");
+    await laadGebruikers();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+function renderInstellingen() {
+  content.innerHTML = `
+    <section class="panel instellingen-paneel">
+      <header class="panel__head">
+        <div class="panel__titel"><i data-lucide="building-2"></i><h2>Studio</h2></div>
+      </header>
+
+      <label class="veld">
+        <span>Studionaam</span>
+        <input class="ed-input" id="studionaam-invoer" type="text" placeholder="studio" value="${esc(instellingen.studionaam)}">
+      </label>
+
+      <div class="instellingen-logo">
+        <span class="logo-mark ${instellingen.logo ? "logo-mark--afbeelding" : ""}" style="${instellingen.logo ? `background-image:url('${esc(instellingen.logo)}')` : ""}"></span>
+        <div class="instellingen-logo__acties">
+          <input type="file" id="logo-invoer" accept=".png,.jpg,.jpeg,.svg,.webp" hidden>
+          <button type="button" class="btn btn--ghost" id="logo-kiezen">
+            <i data-lucide="upload"></i> Logo uploaden
+          </button>
+          ${instellingen.logo ? `
+          <button type="button" class="btn btn--ghost" id="logo-weg">
+            <i data-lucide="trash-2"></i> Verwijderen
+          </button>` : ""}
+        </div>
+      </div>
+      <p class="muted klein">PNG, JPG, SVG of WEBP, max 5 MB. Vervangt het gekleurde vierkantje in de zijbalk.</p>
+    </section>
+
+    <section class="panel instellingen-paneel">
+      <header class="panel__head">
+        <div class="panel__titel"><i data-lucide="palette"></i><h2>Standaard stijlgids</h2></div>
+      </header>
+      <p class="muted klein">Nieuwe projecten, en projecten zonder eigen stijlgids, beginnen met deze kleuren, fonts en knoppen.</p>
+
+      <div class="instellingen-voorbeeld">${miniPaletFonts(standaardStijl)}</div>
+
+      <div class="detail__acties">
+        <button type="button" class="btn btn--primary" id="standaard-bewerken">
+          <i data-lucide="pencil-ruler"></i> Bewerken
+        </button>
+        <button type="button" class="btn btn--ghost" id="standaard-overnemen">
+          <i data-lucide="copy"></i> Overnemen van project
+        </button>
+        <button type="button" class="btn btn--ghost" id="standaard-reset">
+          <i data-lucide="rotate-ccw"></i> Terugzetten naar app-standaard
+        </button>
+      </div>
+    </section>
+
+    <section class="panel instellingen-paneel">
+      <header class="panel__head">
+        <div class="panel__titel"><i data-lucide="hard-drive"></i><h2>Opslag</h2></div>
+      </header>
+
+      <dl class="info-grid info-grid--paden">
+        <div><dt>Projecten</dt><dd><code>${esc(paden?.projecten || "…")}</code></dd></div>
+        <div><dt>Data (klanten, instellingen)</dt><dd><code>${esc(paden?.data || "…")}</code></dd></div>
+      </dl>
+
+      <div class="detail__acties">
+        <button type="button" class="btn btn--ghost" id="open-projecten-map">
+          <i data-lucide="folder-open"></i> Open projecten-map
+        </button>
+        <button type="button" class="btn btn--ghost" id="open-data-map">
+          <i data-lucide="folder-open"></i> Open data-map
+        </button>
+      </div>
+      <p class="muted klein">Maak zelf back-ups: deze mappen staan niet op GitHub.</p>
+    </section>
+  `;
+}
+
 function renderProject() {
   const p = projecten.find((x) => x.id === openProjectId);
 
@@ -605,16 +1227,20 @@ function renderProject() {
         .reduce((som, [, lijst]) => som + lijst.length, 0)
     : "…";
 
+  const klantLink = p.klantId
+    ? `<button class="link-klant" data-klant="${esc(p.klantId)}">${esc(p.klant)}</button>`
+    : "Geen klant";
+
   content.innerHTML = `
-    <button class="terug-link" data-nav="dashboard">
-      <i data-lucide="arrow-left"></i> Alle projecten
+    <button class="terug-link" data-nav="${huidigePagina}">
+      <i data-lucide="arrow-left"></i> Terug naar ${PAGINAS[huidigePagina]}
     </button>
 
     <section class="panel detail">
       <header class="detail__head">
         <div class="icon-tile icon-tile--${s.kleur} icon-tile--groot"><i data-lucide="${s.icoon}"></i></div>
         <div class="detail__titel">
-          <p class="project__meta">${esc(p.klant || "Geen klant")}</p>
+          <p class="project__meta">${klantLink}</p>
           <h2>${esc(p.naam)}</h2>
         </div>
         <div class="detail__acties">
@@ -678,18 +1304,28 @@ function renderBinnenkort(naam) {
 }
 
 function render() {
-  if (openProjectId) {
+  if (modus === "stijlgids" && stijlgidsBron === "standaard") {
+    titel.textContent = "Instellingen · Standaard stijlgids";
+    renderEditor();
+  } else if (openProjectId) {
     const p = projecten.find((x) => x.id === openProjectId);
     const naam = p ? p.naam : "Project";
     titel.textContent = modus === "stijlgids" ? `${naam} · Stijlgids` : naam;
 
     if (modus === "stijlgids") renderEditor();
     else renderProject();
+  } else if (openKlantId) {
+    const k = klanten.find((x) => x.id === openKlantId);
+    titel.textContent = k ? k.naam : "Klant";
+    renderKlant();
   } else {
     titel.textContent = PAGINAS[huidigePagina];
     if (huidigePagina === "dashboard") renderDashboard();
     else if (huidigePagina === "projecten") renderProjecten();
     else if (huidigePagina === "stijlgidsen") renderStijlgidsen();
+    else if (huidigePagina === "klanten") renderKlanten();
+    else if (huidigePagina === "gebruikers") renderGebruikers();
+    else if (huidigePagina === "instellingen") renderInstellingen();
     else renderBinnenkort(PAGINAS[huidigePagina]);
   }
 
@@ -698,69 +1334,35 @@ function render() {
 
   lucide.createIcons();
 
-  if (openProjectId && modus === "stijlgids" && stijlgids) verversVoorbeeld(0);
+  if (modus === "stijlgids" && stijlgids) verversVoorbeeld(0);
 }
 
-// ---------- Projectformulier (nieuw + bewerken) ----------
+// ---------- Pop-ups ----------
 
-function openProjectFormulier(project = null) {
-  const bewerken = Boolean(project);
-  const waarde = (veld) => esc(project?.[veld] ?? "");
-
-  const opties = Object.entries(STATUS)
-    .map(([key, s]) => `<option value="${key}" ${project?.status === key ? "selected" : ""}>${s.label}</option>`)
-    .join("");
-
+// Algemene pop-up met een formulier
+function openModal({ kop, inhoud, knop, opslaan }) {
   const modal = document.createElement("div");
   modal.className = "modal-achtergrond";
   modal.innerHTML = `
-    <form class="modal">
+    <form class="modal" novalidate>
       <header class="modal__head">
-        <h2>${bewerken ? "Project bewerken" : "Nieuw project"}</h2>
+        <h2>${kop}</h2>
         <button type="button" class="icon-btn" data-sluit aria-label="Sluiten"><i data-lucide="x"></i></button>
       </header>
-
       <div class="modal__body">
-        <label class="veld">
-          <span>Projectnaam</span>
-          <input name="naam" type="text" placeholder="Bijv. Bloemenwinkel Lisa" value="${waarde("naam")}" required>
-        </label>
-        <label class="veld">
-          <span>Klant</span>
-          <input name="klant" type="text" placeholder="Naam van de klant" value="${waarde("klant")}">
-        </label>
-        <div class="veld-rij">
-          <label class="veld">
-            <span>Status</span>
-            <select name="status">${opties}</select>
-          </label>
-          <label class="veld">
-            <span>Deadline</span>
-            <input name="deadline" type="date" value="${waarde("deadline")}">
-          </label>
-        </div>
-        <label class="veld">
-          <span>Omschrijving</span>
-          <textarea name="omschrijving" rows="3" placeholder="Wat ga je maken?">${waarde("omschrijving")}</textarea>
-        </label>
-        <p class="muted klein">
-          ${bewerken
-            ? "Let op: de mapnaam blijft hetzelfde, ook als je de projectnaam aanpast."
-            : "Er wordt een map aangemaakt met een standaard stijlgids, website en de mappen <code>images</code>, <code>documenten</code> en <code>stijlgids</code>."}
-        </p>
+        ${inhoud}
         <p class="form-fout" hidden></p>
       </div>
-
       <footer class="modal__voet">
         <button type="button" class="btn btn--ghost" data-sluit>Annuleren</button>
-        <button type="submit" class="btn btn--primary">${bewerken ? "Opslaan" : "Project aanmaken"}</button>
+        <button type="submit" class="btn btn--primary">${knop}</button>
       </footer>
     </form>
   `;
 
   document.body.appendChild(modal);
   lucide.createIcons();
-  modal.querySelector('[name="naam"]').focus();
+  modal.querySelector("input, textarea, select")?.focus();
 
   function opEscape(e) {
     if (e.key === "Escape") sluit();
@@ -775,44 +1377,181 @@ function openProjectFormulier(project = null) {
     if (e.target === modal || e.target.closest("[data-sluit]")) sluit();
   });
 
-  modal.querySelector("form").addEventListener("submit", async (e) => {
+  const form = modal.querySelector("form");
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target));
     const foutEl = modal.querySelector(".form-fout");
+    const knopEl = form.querySelector('[type="submit"]');
 
+    // Verplichte velden zelf checken, zodat de foutmelding in de pop-up staat
+    const leeg = [...form.querySelectorAll("[required]")].find((v) => !v.value.trim());
+    if (leeg) {
+      foutEl.textContent = `Vul "${leeg.closest(".veld").querySelector("span").textContent}" in.`;
+      foutEl.hidden = false;
+      leeg.focus();
+      return;
+    }
+
+    knopEl.disabled = true;
     try {
+      await opslaan(Object.fromEntries(new FormData(form)));
+      sluit();
+    } catch (fout) {
+      foutEl.textContent = fout.message;
+      foutEl.hidden = false;
+      knopEl.disabled = false;
+    }
+  });
+}
+
+// Project: nieuw of bewerken. "voorinvullen" vult velden alvast in (bijv. de klant)
+function openProjectFormulier(project = null, voorinvullen = {}) {
+  const bewerken = Boolean(project);
+  const waarde = (veld) => esc(project?.[veld] ?? voorinvullen[veld] ?? "");
+
+  const statusOpties = Object.entries(STATUS)
+    .map(([key, s]) => `<option value="${key}" ${project?.status === key ? "selected" : ""}>${s.label}</option>`)
+    .join("");
+
+  const klantOpties = klanten.map((k) => `<option value="${esc(k.naam)}"></option>`).join("");
+
+  openModal({
+    kop: bewerken ? "Project bewerken" : "Nieuw project",
+    knop: bewerken ? "Opslaan" : "Project aanmaken",
+    inhoud: `
+      <label class="veld">
+        <span>Projectnaam</span>
+        <input name="naam" type="text" placeholder="Bijv. Bloemenwinkel Lisa" value="${waarde("naam")}" required>
+      </label>
+      <label class="veld">
+        <span>Klant</span>
+        <input name="klant" type="text" list="klant-lijst" placeholder="Kies of typ een naam" value="${waarde("klant")}" autocomplete="off">
+        <datalist id="klant-lijst">${klantOpties}</datalist>
+        <small class="muted klein">Nieuwe naam? Dan wordt de klant automatisch aangemaakt.</small>
+      </label>
+      <div class="veld-rij">
+        <label class="veld">
+          <span>Status</span>
+          <select name="status">${statusOpties}</select>
+        </label>
+        <label class="veld">
+          <span>Deadline</span>
+          <input name="deadline" type="date" value="${waarde("deadline")}">
+        </label>
+      </div>
+      <label class="veld">
+        <span>Omschrijving</span>
+        <textarea name="omschrijving" rows="3" placeholder="Wat ga je maken?">${waarde("omschrijving")}</textarea>
+      </label>
+      <p class="muted klein">
+        ${bewerken
+          ? "Let op: de mapnaam blijft hetzelfde, ook als je de projectnaam aanpast."
+          : "Er wordt een map aangemaakt met een standaard stijlgids, website en de mappen <code>images</code>, <code>documenten</code> en <code>stijlgids</code>."}
+      </p>
+    `,
+    opslaan: async (data) => {
       if (bewerken) {
-        const bijgewerkt = await api(`/api/projecten/${project.id}`, {
-          method: "PATCH",
-          body: JSON.stringify(data),
-        });
-        projecten = projecten.map((p) => (p.id === project.id ? { ...p, ...bijgewerkt } : p));
+        await api(`/api/projecten/${project.id}`, { method: "PATCH", body: JSON.stringify(data) });
         toast("Project opgeslagen");
       } else {
         const nieuw = await api("/api/projecten", { method: "POST", body: JSON.stringify(data) });
-        projecten.unshift(nieuw);
         toast(`"${nieuw.naam}" aangemaakt`);
         // De PNG-cover wordt op de achtergrond gemaakt: even later opnieuw ophalen
         setTimeout(laadProjecten, 5000);
       }
-      sluit();
-      render();
-    } catch (fout) {
-      foutEl.textContent = fout.message;
-      foutEl.hidden = false;
-    }
+      await laadProjecten();
+    },
+  });
+}
+
+// Klant: nieuw of bewerken
+function openKlantFormulier(klant = null) {
+  const bewerken = Boolean(klant);
+  const waarde = (veld) => esc(klant?.[veld] ?? "");
+
+  openModal({
+    kop: bewerken ? "Klant bewerken" : "Nieuwe klant",
+    knop: bewerken ? "Opslaan" : "Klant toevoegen",
+    inhoud: `
+      <div class="veld-rij">
+        <label class="veld">
+          <span>Naam</span>
+          <input name="naam" type="text" placeholder="Bijv. Lisa de Vries" value="${waarde("naam")}" required>
+        </label>
+        <label class="veld">
+          <span>Bedrijf</span>
+          <input name="bedrijf" type="text" placeholder="Bijv. Bloemenwinkel Lisa" value="${waarde("bedrijf")}">
+        </label>
+      </div>
+      <div class="veld-rij">
+        <label class="veld">
+          <span>E-mail</span>
+          <input name="email" type="email" placeholder="naam@voorbeeld.nl" value="${waarde("email")}">
+        </label>
+        <label class="veld">
+          <span>Telefoon</span>
+          <input name="telefoon" type="tel" placeholder="06 12345678" value="${waarde("telefoon")}">
+        </label>
+      </div>
+      <div class="veld-rij">
+        <label class="veld">
+          <span>Instagram</span>
+          <input name="instagram" type="text" placeholder="@gebruikersnaam" value="${waarde("instagram")}">
+        </label>
+        <label class="veld">
+          <span>Website</span>
+          <input name="website" type="text" placeholder="www.voorbeeld.nl" value="${waarde("website")}">
+        </label>
+      </div>
+      <label class="veld">
+        <span>Notities</span>
+        <textarea name="notities" rows="4" placeholder="Wensen, afspraken, hoe je elkaar kent…">${waarde("notities")}</textarea>
+      </label>
+      ${bewerken ? `<p class="muted klein">Pas je de naam aan, dan wordt die ook in alle projecten van deze klant aangepast.</p>` : ""}
+    `,
+    opslaan: async (data) => {
+      if (bewerken) {
+        await api(`/api/klanten/${klant.id}`, { method: "PATCH", body: JSON.stringify(data) });
+        toast("Klant opgeslagen");
+        await laadProjecten();
+      } else {
+        const nieuw = await api("/api/klanten", { method: "POST", body: JSON.stringify(data) });
+        toast(`${nieuw.naam} toegevoegd`);
+        await laadProjecten();
+        gaNaar("klanten", null, { klantId: nieuw.id });
+      }
+    },
   });
 }
 
 // ---------- Klikken, slepen en typen ----------
 
 // Menu
-document.querySelectorAll(".nav__item").forEach((item) => {
+document.querySelectorAll(".nav__item[data-page]").forEach((item) => {
   item.addEventListener("click", (e) => {
     e.preventDefault();
     gaNaar(item.dataset.page);
   });
 });
+
+// Profiel (zijbalk, buiten #content)
+document.getElementById("profiel-knop").addEventListener("click", openWachtwoordFormulier);
+document.getElementById("uitlog-knop").addEventListener("click", uitloggen);
+
+// Twee keer klikken om te bevestigen (verwijderen)
+function bevestigKlik(knop, actie) {
+  if (knop.classList.contains("is-zeker")) return actie();
+
+  const oud = knop.innerHTML;
+  knop.classList.add("is-zeker");
+  knop.textContent = "Zeker?";
+  setTimeout(() => {
+    if (!knop.isConnected) return;
+    knop.classList.remove("is-zeker");
+    knop.innerHTML = oud;
+    lucide.createIcons();
+  }, 3000);
+}
 
 // Alle knoppen in de inhoud
 content.addEventListener("click", (e) => {
@@ -847,6 +1586,25 @@ content.addEventListener("click", (e) => {
     return gaNaar(huidigePagina, stijlgidsKnop.dataset.stijlgidsVoor, { nieuweModus: "stijlgids" });
   }
 
+  // Klanten
+  const klantKnop = e.target.closest("[data-klant]");
+  if (klantKnop) return gaNaar("klanten", null, { klantId: klantKnop.dataset.klant });
+
+  if (e.target.closest("[data-nieuwe-klant]")) return openKlantFormulier();
+
+  if (e.target.closest("[data-klant-bewerk]")) {
+    return openKlantFormulier(klanten.find((k) => k.id === openKlantId));
+  }
+
+  if (e.target.closest("[data-klant-project]")) {
+    const klant = klanten.find((k) => k.id === openKlantId);
+    return openProjectFormulier(null, { klant: klant?.naam || "" });
+  }
+
+  const klantWeg = e.target.closest("[data-klant-weg]");
+  if (klantWeg) return bevestigKlik(klantWeg, () => verwijderKlant(klantWeg.dataset.klantWeg));
+
+  // Navigatie en projectacties
   const navKnop = e.target.closest("[data-nav]");
   if (navKnop) return gaNaar(navKnop.dataset.nav);
 
@@ -863,28 +1621,36 @@ content.addEventListener("click", (e) => {
 
   if (e.target.closest("#nieuw-project")) return openProjectFormulier();
 
-  // Verwijderen: eerste klik vraagt bevestiging, tweede klik verwijdert
+  // Gebruikers
+  if (e.target.closest("[data-nieuwe-gebruiker]")) return openGebruikerFormulier();
+
+  const gebruikerWeg = e.target.closest("[data-gebruiker-weg]");
+  if (gebruikerWeg) return bevestigKlik(gebruikerWeg, () => verwijderGebruiker(gebruikerWeg.dataset.gebruikerWeg));
+
+  // Instellingen
+  if (e.target.closest("#standaard-bewerken")) return bewerkStandaardStijlgids();
+  if (e.target.closest("#standaard-overnemen")) return openOvernemenFormulier();
+
+  const standaardReset = e.target.closest("#standaard-reset");
+  if (standaardReset) return bevestigKlik(standaardReset, resetStandaardStijlgids);
+
+  if (e.target.closest("#logo-kiezen")) return document.getElementById("logo-invoer").click();
+  if (e.target.closest("#logo-weg")) return verwijderLogo();
+  if (e.target.closest("#open-projecten-map")) return openOpslagMap("projecten");
+  if (e.target.closest("#open-data-map")) return openOpslagMap("data");
+
+  // Bestand verwijderen
   const weg = e.target.closest("[data-verwijder]");
-  if (weg) {
-    if (weg.classList.contains("is-zeker")) {
-      verwijderBestand(weg.dataset.verwijder, weg.dataset.naam);
-    } else {
-      weg.classList.add("is-zeker");
-      weg.textContent = "Zeker?";
-      setTimeout(() => {
-        if (!weg.isConnected) return;
-        weg.classList.remove("is-zeker");
-        weg.innerHTML = `<i data-lucide="trash-2"></i>`;
-        lucide.createIcons();
-      }, 3000);
-    }
-  }
+  if (weg) return bevestigKlik(weg, () => verwijderBestand(weg.dataset.verwijder, weg.dataset.naam));
 });
 
 // Dropdowns en bestandskiezer
 content.addEventListener("change", (e) => {
   const select = e.target.closest("[data-status-voor]");
   if (select) return wijzigStatus(select.dataset.statusVoor, select.value);
+
+  const rolSelectEl = e.target.closest("[data-rol-voor]");
+  if (rolSelectEl) return wijzigGebruikerRol(rolSelectEl.dataset.rolVoor, rolSelectEl.value);
 
   if (e.target.id === "sortering") {
     sortering = e.target.value;
@@ -893,6 +1659,13 @@ content.addEventListener("change", (e) => {
 
   if (e.target.id === "upload-input") {
     uploadBestanden(e.target.files);
+    e.target.value = "";
+  }
+
+  if (e.target.id === "studionaam-invoer") return slaStudionaamOp(e.target.value);
+
+  if (e.target.id === "logo-invoer") {
+    uploadLogo(e.target.files[0]);
     e.target.value = "";
   }
 });
@@ -918,11 +1691,14 @@ content.addEventListener("drop", (e) => {
   uploadBestanden(e.dataTransfer.files);
 });
 
-// Zoeken: werkt op Dashboard, Projecten en Stijlgidsen
+// Zoeken: werkt op Dashboard, Projecten, Stijlgidsen en Klanten
 zoekveld.addEventListener("input", () => {
   zoekterm = zoekveld.value;
-  if (openProjectId) gaNaar("projecten");
-  else if (["dashboard", "projecten", "stijlgidsen"].includes(huidigePagina)) render();
+  if (openProjectId || openKlantId) {
+    gaNaar(openKlantId ? "klanten" : "projecten");
+  } else if (["dashboard", "projecten", "stijlgidsen", "klanten"].includes(huidigePagina)) {
+    render();
+  }
 });
 
 document.addEventListener("keydown", (e) => {
@@ -934,4 +1710,11 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- Start ----------
 // Wacht tot editor.js ook geladen is
-window.addEventListener("DOMContentLoaded", laadProjecten);
+window.addEventListener("DOMContentLoaded", async () => {
+  await laadSessie();
+  if (!ingelogdeGebruiker) return; // al doorgestuurd naar /login.html
+
+  laadProjecten();
+  laadInstellingen();
+  laadPaden();
+});
