@@ -114,29 +114,31 @@ Dat blijft los van de eigen merkkleur van het dashboard hierboven.
 
 ## Status
 
-Klaar: stap 1–18 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
+Klaar: stap 1–19 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
 met live voorbeeld, PDF/PNG-export, flexibele fonts + kopjes over het merk, pagina's Projecten,
 Stijlgidsen en Klanten, Instellingen met studionaam/logo/standaard-stijlgids/opslagpaden,
 inloggen + rollen, fijnmazige rechten per rol, bestanden bij een klant, facturen & offertes,
 prijscalculator, website-preview per project, "te laat"-indicator bij facturen, financieel
 overzicht op het Dashboard, klant-feedback/revisies per project, klant-procesoverzicht +
-intake-flow).
+intake-flow, menu in gegroepeerde categorieën).
+
+**Het volledige bedrijfsproces-traject (afgesproken okt 2026, stap 12–19) is hiermee af.**
+Siem kan nu het hele proces — eerste contact → gespreksverslag → project → stijlgids →
+website → feedback → oplevering → offerte/factuur → betaald — vanaf de klantpagina
+doorlopen en zien. Geen vervolgstappen meer gepland; nieuwe wensen komen hier te staan
+zodra Siem ze aangeeft.
 
 Geparkeerd: de PDF moet later een andere opzet krijgen (Siem bepaalt nog hoe, mogelijk liggende
 "borden" zoals een brand-guidelines-presentatie). Niet zelf aanpassen zonder te vragen.
 
-**Volgende: volledige bedrijfsproces afmaken (afgesproken okt 2026), in deze volgorde:**
+## Stap 19: Menu opdelen in gegroepeerde categorieën (klaar, okt 2026)
 
-Siem wil het hele proces van eerste contact tot oplevering + administratie kunnen doorlopen,
-en dat vanaf de klantpagina kunnen navigeren. Gat-analyse tegen wat er al staat (Klanten,
-Prijscalculator, Offertes/Facturen, Projecten, Stijlgids, Klantbestanden, Rollen) leverde deze
-ontbrekende stukken op, in de afgesproken bouwvolgorde:
-
-1. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
-   nog te bouwen
-
-Elke stap: eerst een kort plan (plan mode), dan bouwen, dan testen, dan een eigen git-commit
-— zelfde werkwijze als tot nu toe.
+Zijbalk gegroepeerd met kopjes (`.nav__kop`, zelfde tekst-stijl als `.sectie-label`): geen
+kopje boven Dashboard, dan **Werk** (Projecten/Stijlgidsen/Websites), **Klanten &
+facturatie** (Klanten/Offertes/Facturen/Prijscalculator), **Beheer** (Gebruikers/
+Instellingen). Pure HTML/CSS-wijziging — de actieve-pagina- en klik-logica in app.js
+selecteert al via de `.nav__item`-class, ongeacht nesting, dus niets anders hoefde aan te
+passen.
 
 ## Stap 18: Klant-procesoverzicht + intake-flow (klaar, okt 2026)
 
