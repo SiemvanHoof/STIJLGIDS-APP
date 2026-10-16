@@ -1737,6 +1737,35 @@ textarea.ed-input { resize: vertical; line-height: 1.5; }
   font-size: 15px;
 }
 
+/* Procesoverzicht op de klantpagina */
+.proces-rij {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.proces-rij:last-child { border-bottom: none; }
+.proces-stappen {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.proces-stap {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-light);
+  border: 1px solid var(--border);
+}
+.proces-stap--klaar {
+  background: #EAF8EF;
+  color: #16A34A;
+  border-color: #D5F0DE;
+}
+
 /* Inlogpagina */
 body.login-pagina {
   display: flex;

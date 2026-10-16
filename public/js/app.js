@@ -1299,6 +1299,10 @@ function renderKlant() {
           <button class="btn btn--ghost" data-klant-factuur>
             <i data-lucide="file-text"></i> Nieuwe factuur
           </button>` : ""}
+          ${klant.gespreksverslag ? `
+          <button class="btn btn--ghost" data-klant-project>
+            <i data-lucide="message-square-plus"></i> Maak project van dit gesprek
+          </button>` : ""}
           <button class="btn btn--primary" data-klant-project>
             <i data-lucide="plus"></i> Nieuw project
           </button>
@@ -1318,6 +1322,12 @@ function renderKlant() {
             ? `<p class="notities">${esc(klant.notities)}</p>`
             : `<p class="muted">Geen notities.</p>`}
         </div>
+        <div>
+          <p class="sectie-label">Gespreksverslag</p>
+          ${klant.gespreksverslag
+            ? `<p class="notities">${esc(klant.gespreksverslag)}</p>`
+            : `<p class="muted">Nog geen gespreksverslag. Klik op Bewerken om het intakegesprek samen te vatten.</p>`}
+        </div>
       </div>
 
       <dl class="info-grid">
@@ -1326,6 +1336,19 @@ function renderKlant() {
         <div><dt>Klaar</dt><dd>${tel("klaar", eigen)}</dd></div>
         <div><dt>Klant sinds</dt><dd>${korteDatum(klant.aangemaakt)}</dd></div>
       </dl>
+    </section>
+
+    <section class="panel">
+      <header class="panel__head">
+        <div class="panel__titel">
+          <i data-lucide="route"></i>
+          <h2>Procesoverzicht</h2>
+          <span class="teller">${eigen.length}</span>
+        </div>
+      </header>
+      ${eigen.length
+        ? eigen.map(procesOverzicht).join("")
+        : legeStaat("route", "Nog geen project", "Zodra er een project is, zie je hier de voortgang: intake, offerte, stijlgids, website, feedback, oplevering en factuur.")}
     </section>
 
     <section class="panel">
@@ -1367,6 +1390,44 @@ function renderKlant() {
 
     <div class="mappen">
       ${Object.entries(KLANT_MAPPEN).map(([key, map]) => mapPaneel(key, map, klantBestanden)).join("")}
+    </div>
+  `;
+}
+
+function procesStappen(project) {
+  const eigenOffertes = offertes.filter((o) => o.projectId === project.id);
+  const eigenFacturen = facturen.filter((f) => f.projectId === project.id);
+  const heeftOpenRevisie = (project.revisies || []).some((r) => !r.afgehandeld);
+
+  return [
+    { key: "intake", label: "Intake", klaar: true },
+    { key: "offerte", label: "Offerte", klaar: eigenOffertes.length > 0 },
+    { key: "project", label: "Project", klaar: true },
+    { key: "stijlgids", label: "Stijlgids", klaar: true },
+    { key: "website", label: "Website", klaar: !!project.website },
+    { key: "feedback", label: "Feedback", klaar: !heeftOpenRevisie },
+    { key: "oplevering", label: "Oplevering", klaar: project.status === "klaar" },
+    { key: "factuur", label: "Factuur", klaar: eigenFacturen.length > 0 },
+    { key: "betaald", label: "Betaald", klaar: eigenFacturen.some((f) => f.status === "betaald") },
+  ];
+}
+
+function procesOverzicht(project) {
+  const stappen = procesStappen(project);
+  const volgende = stappen.find((s) => !s.klaar);
+
+  const knop = !volgende ? "" :
+    volgende.key === "offerte" ? `<button type="button" class="btn btn--ghost" data-proces-offerte="${esc(project.id)}">Nieuwe offerte</button>` :
+    volgende.key === "factuur" ? `<button type="button" class="btn btn--ghost" data-proces-factuur="${esc(project.id)}">Nieuwe factuur</button>` :
+    `<button type="button" class="btn btn--ghost" data-project="${esc(project.id)}">Open project</button>`;
+
+  return `
+    <div class="proces-rij">
+      <span class="project__naam klein">${esc(project.naam)}</span>
+      <div class="proces-stappen">
+        ${stappen.map((s) => `<span class="proces-stap ${s.klaar ? "proces-stap--klaar" : ""}">${esc(s.label)}</span>`).join("")}
+      </div>
+      ${knop}
     </div>
   `;
 }
@@ -2465,6 +2526,10 @@ function openKlantFormulier(klant = null) {
         <span>Notities</span>
         <textarea name="notities" rows="4" placeholder="Wensen, afspraken, hoe je elkaar kent…">${waarde("notities")}</textarea>
       </label>
+      <label class="veld">
+        <span>Gespreksverslag</span>
+        <textarea name="gespreksverslag" rows="4" placeholder="Samenvatting van het intakegesprek">${waarde("gespreksverslag")}</textarea>
+      </label>
       ${bewerken ? `<p class="muted klein">Pas je de naam aan, dan wordt die ook in alle projecten van deze klant aangepast.</p>` : ""}
     `,
     opslaan: async (data) => {
@@ -2567,6 +2632,12 @@ content.addEventListener("click", (e) => {
 
   if (e.target.closest("[data-klant-offerte]")) return openDocumentEditor("offerte", null, { klantId: openKlantId });
   if (e.target.closest("[data-klant-factuur]")) return openDocumentEditor("factuur", null, { klantId: openKlantId });
+
+  const procesOfferte = e.target.closest("[data-proces-offerte]");
+  if (procesOfferte) return openDocumentEditor("offerte", null, { klantId: openKlantId, projectId: procesOfferte.dataset.procesOfferte });
+
+  const procesFactuur = e.target.closest("[data-proces-factuur]");
+  if (procesFactuur) return openDocumentEditor("factuur", null, { klantId: openKlantId, projectId: procesFactuur.dataset.procesFactuur });
 
   const klantWeg = e.target.closest("[data-klant-weg]");
   if (klantWeg) return bevestigKlik(klantWeg, () => verwijderKlant(klantWeg.dataset.klantWeg));

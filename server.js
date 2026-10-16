@@ -36,7 +36,7 @@ const OFFERTES_MAP = path.join(DATA_MAP, "offertes");
 const STATUSSEN = ["nog-beginnen", "bezig", "wacht-op-klant", "klaar"];
 const SUBMAPPEN = ["site", "images", "documenten", "stijlgids"];
 const SUBMAPPEN_KLANT = ["images", "documenten"];
-const KLANT_VELDEN = ["naam", "bedrijf", "email", "telefoon", "instagram", "website", "notities"];
+const KLANT_VELDEN = ["naam", "bedrijf", "email", "telefoon", "instagram", "website", "notities", "gespreksverslag"];
 const LOGO_TYPES = { "image/png": ".png", "image/jpeg": ".jpg", "image/svg+xml": ".svg", "image/webp": ".webp" };
 const ROLLEN = ["beheerder", "medewerker"];
 const RECHTEN = ["projecten", "klanten", "stijlgidsen", "instellingen", "facturen"];
@@ -200,7 +200,7 @@ function nieuwKlantId(naam, lijst) {
 // Alleen bekende velden, netjes ingekort
 function schoonKlantVeld(veld, waarde) {
   let tekst = typeof waarde === "string" ? waarde.trim() : "";
-  tekst = tekst.slice(0, veld === "notities" ? 2000 : 200);
+  tekst = tekst.slice(0, veld === "notities" || veld === "gespreksverslag" ? 2000 : 200);
   if (veld === "instagram") {
     tekst = tekst
       .replace(/^https?:\/\/(www\.)?instagram\.com\//i, "")
