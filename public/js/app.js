@@ -789,6 +789,13 @@ function deadlineTekst(project) {
   return `<span class="muted">${korteDatum(project.deadline)}</span>`;
 }
 
+function factuurTeLaatTekst(doc, type) {
+  if (type !== "factuur" || doc.status === "betaald") return "";
+  const dagen = dagenTot(doc.vervaldatum);
+  if (dagen === null || dagen >= 0) return "";
+  return `<span class="text--red klein">${Math.abs(dagen)} ${Math.abs(dagen) === 1 ? "dag" : "dagen"} te laat</span>`;
+}
+
 function avatar(naam, groot = false) {
   return `<span class="avatar ${groot ? "avatar--groot" : ""}" style="background:${avatarKleur(naam)}" aria-hidden="true">${esc(initialen(naam))}</span>`;
 }
@@ -1305,6 +1312,7 @@ function documentRij(doc, type) {
         <span class="project__naam">${euro(totalen.totaal)}</span>
       </button>
       <div class="project__rechts">
+        ${factuurTeLaatTekst(doc, type)}
         <span class="status-pil status-pil--${s.kleur}"><span class="dot dot--${s.kleur}"></span>${s.label}</span>
       </div>
     </article>
@@ -1587,6 +1595,7 @@ function renderDocumentEditor() {
         <label class="veld">
           <span>${isFactuur ? "Vervaldatum" : "Geldig tot"}</span>
           <input type="date" data-doc-veld="vervaldatum" value="${esc(bewerkDocument.vervaldatum)}">
+          ${isFactuur ? factuurTeLaatTekst(bewerkDocument, "factuur") : ""}
         </label>
       </div>
     </section>
