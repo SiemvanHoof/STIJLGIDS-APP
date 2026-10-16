@@ -114,12 +114,13 @@ Dat blijft los van de eigen merkkleur van het dashboard hierboven.
 
 ## Status
 
-Klaar: stap 1–17 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
+Klaar: stap 1–18 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
 met live voorbeeld, PDF/PNG-export, flexibele fonts + kopjes over het merk, pagina's Projecten,
 Stijlgidsen en Klanten, Instellingen met studionaam/logo/standaard-stijlgids/opslagpaden,
 inloggen + rollen, fijnmazige rechten per rol, bestanden bij een klant, facturen & offertes,
 prijscalculator, website-preview per project, "te laat"-indicator bij facturen, financieel
-overzicht op het Dashboard, klant-feedback/revisies per project).
+overzicht op het Dashboard, klant-feedback/revisies per project, klant-procesoverzicht +
+intake-flow).
 
 Geparkeerd: de PDF moet later een andere opzet krijgen (Siem bepaalt nog hoe, mogelijk liggende
 "borden" zoals een brand-guidelines-presentatie). Niet zelf aanpassen zonder te vragen.
@@ -131,21 +132,39 @@ en dat vanaf de klantpagina kunnen navigeren. Gat-analyse tegen wat er al staat 
 Prijscalculator, Offertes/Facturen, Projecten, Stijlgids, Klantbestanden, Rollen) leverde deze
 ontbrekende stukken op, in de afgesproken bouwvolgorde:
 
-1. Stap 18: klant-procesoverzicht — de klantpagina wordt het centrale dossier: een
-   stappen-overzicht (**intake/gesprek** → offerte → project → stijlgids → website →
-   feedback → oplevering → factuur → betaald) met per stap status en een knop naar de
-   volgende actie — nog te bouwen. Intake-deel (afgesproken okt 2026): klant toevoegen bij
-   eerste contact (kan al) → na het gesprek een gespreksverslag bij de klant zetten → met één
-   klik een project aanmaken dat eraan gekoppeld is. Geen AI/automatische extractie — het
-   project krijgt gewoon de standaard-stijlgids die nieuwe projecten al automatisch krijgen,
-   Siem vult 'm zelf in zoals nu. Nieuw nodig: een plek voor het gespreksverslag op de
-   klantpagina (apart veld, of het bestaande `notities`-veld hiervoor gebruiken — nog te
-   kiezen) en een "Maak project van dit gesprek"-knop.
-2. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
+1. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
    nog te bouwen
 
 Elke stap: eerst een kort plan (plan mode), dan bouwen, dan testen, dan een eigen git-commit
 — zelfde werkwijze als tot nu toe.
+
+## Stap 18: Klant-procesoverzicht + intake-flow (klaar, okt 2026)
+
+De klantpagina is nu het centrale dossier. Per project een pijplijn (intake → offerte →
+project → stijlgids → website → feedback → oplevering → factuur → betaald) met een knop
+naar de eerstvolgende actie, plus de intake-flow die daarvoor leidt.
+
+- **Datamodel**: enige wijziging is `gespreksverslag` toegevoegd aan `KLANT_VELDEN`
+  (server.js) — net als `notities` generiek opgeslagen, geen nieuwe routes nodig. Apart veld
+  van `notities` (intake-moment vs. doorlopende aantekeningen).
+- **Intake**: `openKlantFormulier()` kreeg een `gespreksverslag`-textarea; op de klantpagina
+  een leesblokje ernaast (zelfde patroon als Notities) en een "Maak project van dit
+  gesprek"-knop naast "Nieuw project", zichtbaar zodra `klant.gespreksverslag` niet leeg is.
+  Hergebruikt letterlijk dezelfde `data-klant-project`-handler (`openProjectFormulier(null,
+  { klant: klant.naam })`) — geen nieuwe projectaanmaak-logica.
+- **Pijplijn**: `procesStappen(project)` berekent per project 9 stappen. `intake`/`project`/
+  `stijlgids` zijn altijd waar zodra het project bestaat (die 3 gebeuren automatisch bij
+  aanmaken). `offerte`/`factuur` koppelen via het bestaande optionele `projectId`-veld op
+  offertes/facturen. `website` via `project.website` (stap 14). `feedback` is waar zolang er
+  geen *open* revisie is (stap 17). `oplevering` = projectstatus "Klaar" (bewust geen nieuw
+  veld — beslist met Siem). `betaald` = minstens één gekoppelde factuur met status
+  "betaald".
+- `procesOverzicht(project)` toont de stappen als chips (groen = klaar) en een knop naar de
+  eerste *niet-klare* stap: "Nieuwe offerte"/"Nieuwe factuur" (opent de document-editor
+  direct met `projectId` vooringevuld) of "Open project" voor de rest (website/feedback/
+  oplevering vragen acties die alleen op de projectpagina kunnen).
+- Nieuwe sectie "Procesoverzicht" op de klantpagina, boven de bestaande "Projecten" en
+  "Offertes & facturen"-secties (die blijven ongewijzigd).
 
 ## Stap 17: Klant-feedback/revisies bijhouden per project (klaar, okt 2026)
 
