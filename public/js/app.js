@@ -15,8 +15,25 @@ const PAGINAS = {
   projecten:    "Projecten",
   stijlgidsen:  "Stijlgidsen",
   klanten:      "Klanten",
+  offertes:     "Offertes",
+  facturen:     "Facturen",
   gebruikers:   "Gebruikers",
   instellingen: "Instellingen",
+};
+
+const BTW_TARIEVEN = [0, 9, 21];
+
+const OFFERTE_STATUS = {
+  concept:      { label: "Concept",      kleur: "yellow" },
+  verzonden:    { label: "Verzonden",    kleur: "blue" },
+  geaccepteerd: { label: "Geaccepteerd", kleur: "green" },
+  afgewezen:    { label: "Afgewezen",    kleur: "red" },
+};
+
+const FACTUUR_STATUS = {
+  concept:   { label: "Concept",   kleur: "yellow" },
+  verzonden: { label: "Verzonden", kleur: "blue" },
+  betaald:   { label: "Betaald",   kleur: "green" },
 };
 
 const ROLLEN = {
@@ -57,17 +74,24 @@ let projectFilter = "";      // filter op de pagina Projecten
 let sortering = "bijgewerkt";
 let modus = "project"; // "project" of "stijlgids"
 let instellingen = { studionaam: "", logo: null };
+let facturatie = null;
 let standaardStijl = null;   // standaard stijlgids, voor het mini-voorbeeld op Instellingen
 let paden = null;            // paden van projecten/ en data/, voor Instellingen
 let ingelogdeGebruiker = null;
 let gebruikers = [];          // alleen geladen voor de pagina Gebruikers (beheerder)
 let rechten = null;           // rechten van de rol Medewerker, alleen geladen voor beheerders
+let offertes = [];
+let facturen = [];
+let bewerkType = null;        // "offerte" | "factuur" | null — bepaalt of de document-editor toont
+let bewerkId = null;          // bestaand document-id, of null bij een nieuwe
+let bewerkDocument = null;    // { klantId, projectId, datum, vervaldatum, regels, notities, status }
 
 const RECHTEN_LABELS = {
   projecten: "Projecten aanmaken, bewerken en verwijderen",
   klanten: "Klanten aanmaken, bewerken en verwijderen",
   stijlgidsen: "Stijlgidsen opslaan",
   instellingen: "Instellingen aanpassen (studio, standaard stijlgids, opslag)",
+  facturen: "Offertes en facturen aanmaken, bewerken en verwijderen",
 };
 
 const geschiedenis = { terug: [], vooruit: [] };
@@ -102,6 +126,25 @@ function esc(tekst) {
 // Mag de ingelogde gebruiker dit? (vóór de sessie geladen is, of voor beheerders: altijd ja)
 function magIk(naam) {
   return ingelogdeGebruiker?.rechten?.[naam] !== false;
+}
+
+function euro(bedrag) {
+  return (Number(bedrag) || 0).toLocaleString("nl-NL", { style: "currency", currency: "EUR" });
+}
+
+// Zelfde rekenwerk als facturatie.js op de server, voor direct feedback tijdens het bewerken
+function berekenTotalen(regels) {
+  const perTarief = new Map();
+  for (const r of regels) {
+    const sub = (Number(r.aantal) || 0) * (Number(r.prijsPerStuk) || 0);
+    perTarief.set(r.btw, (perTarief.get(r.btw) || 0) + sub);
+  }
+  const btwOpbouw = [...perTarief.entries()]
+    .map(([tarief, subtotaal]) => ({ tarief, subtotaal, btw: (subtotaal * tarief) / 100 }))
+    .sort((a, b) => b.tarief - a.tarief);
+  const subtotaal = btwOpbouw.reduce((som, t) => som + t.subtotaal, 0);
+  const btwTotaal = btwOpbouw.reduce((som, t) => som + t.btw, 0);
+  return { subtotaal, btwOpbouw, btwTotaal, totaal: subtotaal + btwTotaal };
 }
 
 function geleden(datum) {
@@ -202,6 +245,9 @@ function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "proje
   openKlantId = projectId ? null : klantId;
   modus = projectId ? nieuweModus : "project";
   stijlgidsBron = "project";
+  bewerkType = null;
+  bewerkId = null;
+  bewerkDocument = null;
   bestanden = null;
   klantBestanden = null;
   stijlgids = null;
@@ -214,8 +260,10 @@ function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "proje
   if (projectId && modus === "project") laadBestanden();
   if (projectId && modus === "stijlgids") laadStijlgids();
   if (!projectId && openKlantId) laadKlantBestanden();
-  if (pagina === "instellingen" && !projectId) laadInstellingenStijlgids();
+  if (pagina === "instellingen" && !projectId) { laadInstellingenStijlgids(); laadFacturatie(); }
   if (pagina === "gebruikers" && !projectId) laadGebruikers();
+  if (pagina === "offertes" && !projectId) laadOffertes();
+  if (pagina === "facturen" && !projectId) laadFacturen();
   window.scrollTo(0, 0);
 }
 
@@ -348,6 +396,35 @@ async function laadInstellingenStijlgids() {
   try {
     standaardStijl = await api("/api/instellingen/stijlgids");
     if (huidigePagina === "instellingen" && !openProjectId) render();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function laadFacturatie() {
+  try {
+    facturatie = await api("/api/facturatie");
+    if (huidigePagina === "instellingen" && !openProjectId) render();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function slaFacturatieOp() {
+  try {
+    facturatie = await api("/api/facturatie", {
+      method: "PATCH",
+      body: JSON.stringify({
+        bedrijfsnaam: document.getElementById("fact-bedrijfsnaam").value,
+        adres: document.getElementById("fact-adres").value,
+        kvkNummer: document.getElementById("fact-kvknummer").value,
+        btwNummer: document.getElementById("fact-btwnummer").value,
+        iban: document.getElementById("fact-iban").value,
+        volgendOffertenummer: document.getElementById("fact-volgend-offerte").value,
+        volgendFactuurnummer: document.getElementById("fact-volgend-factuur").value,
+      }),
+    });
+    toast("Facturatiegegevens opgeslagen");
   } catch (fout) {
     toast(fout.message, "fout");
   }
@@ -1010,6 +1087,8 @@ function renderKlant() {
 
   const eigen = sorteer(projectenVanKlant(klant.id));
   const regels = contactRegels(klant);
+  const eigenOffertes = offertes.filter((o) => o.klantId === klant.id);
+  const eigenFacturen = facturen.filter((f) => f.klantId === klant.id);
 
   content.innerHTML = `
     <button class="terug-link" data-nav="klanten">
@@ -1033,6 +1112,13 @@ function renderKlant() {
           <button class="btn btn--ghost" data-klant-bewerk>
             <i data-lucide="pencil"></i> Bewerken
           </button>
+          ${magIk("facturen") ? `
+          <button class="btn btn--ghost" data-klant-offerte>
+            <i data-lucide="file-text"></i> Nieuwe offerte
+          </button>
+          <button class="btn btn--ghost" data-klant-factuur>
+            <i data-lucide="file-text"></i> Nieuwe factuur
+          </button>` : ""}
           <button class="btn btn--primary" data-klant-project>
             <i data-lucide="plus"></i> Nieuw project
           </button>
@@ -1077,6 +1163,21 @@ function renderKlant() {
       </div>
     </section>
 
+    <section class="panel">
+      <header class="panel__head">
+        <div class="panel__titel">
+          <i data-lucide="file-text"></i>
+          <h2>Offertes &amp; facturen</h2>
+          <span class="teller">${eigenOffertes.length + eigenFacturen.length}</span>
+        </div>
+      </header>
+      <div class="project-lijst">
+        ${eigenOffertes.length || eigenFacturen.length
+          ? [...eigenOffertes.map((o) => documentRij(o, "offerte")), ...eigenFacturen.map((f) => documentRij(f, "factuur"))].join("")
+          : legeStaat("file-text", "Nog geen offertes of facturen", magIk("facturen") ? `Klik op Nieuwe offerte of Nieuwe factuur hierboven.` : "")}
+      </div>
+    </section>
+
     <label class="dropzone" id="dropzone">
       <input type="file" multiple id="upload-input" hidden>
       <div class="icon-tile"><i data-lucide="upload"></i></div>
@@ -1086,6 +1187,193 @@ function renderKlant() {
 
     <div class="mappen">
       ${Object.entries(KLANT_MAPPEN).map(([key, map]) => mapPaneel(key, map, klantBestanden)).join("")}
+    </div>
+  `;
+}
+
+function documentRij(doc, type) {
+  const statusMap = type === "factuur" ? FACTUUR_STATUS : OFFERTE_STATUS;
+  const s = statusMap[doc.status] || statusMap.concept;
+  const klant = klanten.find((k) => k.id === doc.klantId);
+  const totalen = berekenTotalen(doc.regels);
+
+  return `
+    <article class="project">
+      <div class="icon-tile icon-tile--${s.kleur}"><i data-lucide="file-text"></i></div>
+      <button class="project__info" data-document-open="${esc(doc.id)}" data-document-type="${type}">
+        <span class="project__meta">${esc(klant?.naam || "Onbekende klant")} · ${type === "factuur" ? "factuur" : "offerte"} ${esc(String(doc.nummer))}</span>
+        <span class="project__naam">${euro(totalen.totaal)}</span>
+      </button>
+      <div class="project__rechts">
+        <span class="status-pil status-pil--${s.kleur}"><span class="dot dot--${s.kleur}"></span>${s.label}</span>
+      </div>
+    </article>
+  `;
+}
+
+function renderOffertes() {
+  content.innerHTML = `
+    <div class="toolbar">
+      <p class="muted">${offertes.length} ${offertes.length === 1 ? "offerte" : "offertes"}</p>
+      ${magIk("facturen") ? `
+      <button class="btn btn--primary" data-nieuwe-offerte>
+        <i data-lucide="plus"></i> Nieuwe offerte
+      </button>` : ""}
+    </div>
+    <section class="panel">
+      <div class="project-lijst">
+        ${offertes.length
+          ? offertes.map((o) => documentRij(o, "offerte")).join("")
+          : legeStaat("file-text", "Nog geen offertes", "Maak een offerte voor een klant.")}
+      </div>
+    </section>
+  `;
+}
+
+function renderFacturen() {
+  content.innerHTML = `
+    <div class="toolbar">
+      <p class="muted">${facturen.length} ${facturen.length === 1 ? "factuur" : "facturen"}</p>
+      ${magIk("facturen") ? `
+      <button class="btn btn--primary" data-nieuwe-factuur>
+        <i data-lucide="plus"></i> Nieuwe factuur
+      </button>` : ""}
+    </div>
+    <section class="panel">
+      <div class="project-lijst">
+        ${facturen.length
+          ? facturen.map((f) => documentRij(f, "factuur")).join("")
+          : legeStaat("file-text", "Nog geen facturen", "Maak een factuur voor een klant.")}
+      </div>
+    </section>
+  `;
+}
+
+function regelRij(r, i) {
+  return `
+    <div class="regel-rij">
+      <input type="text" data-regel="${i}" data-eig="omschrijving" value="${esc(r.omschrijving)}" placeholder="Omschrijving" class="ed-input regel-rij__omschrijving">
+      <input type="number" min="1" data-regel="${i}" data-eig="aantal" value="${r.aantal}" class="ed-input regel-rij__aantal" aria-label="Aantal">
+      <input type="number" step="0.01" data-regel="${i}" data-eig="prijsPerStuk" value="${r.prijsPerStuk}" class="ed-input regel-rij__prijs" aria-label="Prijs per stuk (negatief voor korting)">
+      <select data-regel="${i}" data-eig="btw" class="ed-input regel-rij__btw" aria-label="BTW">
+        ${BTW_TARIEVEN.map((t) => `<option value="${t}" ${t === r.btw ? "selected" : ""}>${t}%</option>`).join("")}
+      </select>
+      <button type="button" class="icon-btn" data-regel-weg="${i}" aria-label="Regel verwijderen"><i data-lucide="x"></i></button>
+    </div>
+  `;
+}
+
+function totalenBlok(totalen) {
+  return `
+    <div><span>Subtotaal</span><strong>${euro(totalen.subtotaal)}</strong></div>
+    ${totalen.btwOpbouw.map((t) => `<div><span>BTW ${t.tarief}%</span><strong>${euro(t.btw)}</strong></div>`).join("")}
+    <div class="totalen-blok__eind"><span>Totaal</span><strong>${euro(totalen.totaal)}</strong></div>
+  `;
+}
+
+function hertekenDocumentTotalen() {
+  const blok = document.querySelector(".totalen-blok");
+  if (blok) blok.innerHTML = totalenBlok(berekenTotalen(bewerkDocument.regels));
+}
+
+function renderDocumentEditor() {
+  const isFactuur = bewerkType === "factuur";
+  const naam = isFactuur ? "Factuur" : "Offerte";
+  const pad = isFactuur ? "facturen" : "offertes";
+  const statusMap = isFactuur ? FACTUUR_STATUS : OFFERTE_STATUS;
+
+  const klantOpties = `<option value="">Kies een klant</option>` + klanten
+    .map((k) => `<option value="${esc(k.id)}" ${k.id === bewerkDocument.klantId ? "selected" : ""}>${esc(k.naam)}</option>`)
+    .join("");
+
+  const klantProjecten = projecten.filter((p) => p.klantId === bewerkDocument.klantId);
+  const projectOpties = `<option value="">Geen</option>` + klantProjecten
+    .map((p) => `<option value="${esc(p.id)}" ${p.id === bewerkDocument.projectId ? "selected" : ""}>${esc(p.naam)}</option>`)
+    .join("");
+
+  const statusOpties = Object.entries(statusMap)
+    .map(([key, s]) => `<option value="${key}" ${key === bewerkDocument.status ? "selected" : ""}>${s.label}</option>`)
+    .join("");
+
+  const kanOmzetten = !isFactuur && bewerkId && !bewerkDocument.omgezetNaarFactuurId;
+
+  content.innerHTML = `
+    <button class="terug-link" data-document-terug>
+      <i data-lucide="arrow-left"></i> ${isFactuur ? "Facturen" : "Offertes"}
+    </button>
+
+    <section class="panel detail">
+      <header class="detail__head">
+        <div class="detail__titel">
+          <p class="project__meta">${naam}</p>
+          <h2>${bewerkId ? `${naam} ${esc(String(bewerkDocument.nummer))}` : `Nieuwe ${naam.toLowerCase()}`}</h2>
+        </div>
+        <div class="detail__acties">
+          ${bewerkId ? `
+          <a class="btn btn--ghost" href="/api/${pad}/${esc(bewerkId)}/pdf" target="_blank" rel="noopener">
+            <i data-lucide="file-text"></i> PDF
+          </a>
+          ${magIk("facturen") ? `
+          <button type="button" class="btn btn--ghost" data-document-weg>
+            <i data-lucide="trash-2"></i> Verwijderen
+          </button>` : ""}
+          <label class="status-select status-select--rol">
+            <select data-doc-veld="status">${statusOpties}</select>
+            <i data-lucide="chevron-down"></i>
+          </label>` : ""}
+          ${kanOmzetten ? `
+          <button type="button" class="btn btn--primary" data-omzetten>
+            <i data-lucide="arrow-right-left"></i> Omzetten naar factuur
+          </button>` : ""}
+        </div>
+      </header>
+
+      <div class="veld-rij">
+        <label class="veld">
+          <span>Klant</span>
+          <select data-doc-veld="klantId">${klantOpties}</select>
+        </label>
+        <label class="veld">
+          <span>Project (optioneel)</span>
+          <select data-doc-veld="projectId">${projectOpties}</select>
+        </label>
+      </div>
+      <div class="veld-rij">
+        <label class="veld">
+          <span>Datum</span>
+          <input type="date" data-doc-veld="datum" value="${esc(bewerkDocument.datum)}">
+        </label>
+        <label class="veld">
+          <span>${isFactuur ? "Vervaldatum" : "Geldig tot"}</span>
+          <input type="date" data-doc-veld="vervaldatum" value="${esc(bewerkDocument.vervaldatum)}">
+        </label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="sectie-label">Regels</p>
+      <div class="regel-lijst">
+        ${bewerkDocument.regels.map((r, i) => regelRij(r, i)).join("")}
+      </div>
+      <button type="button" class="btn btn--ghost ed-erbij" data-regel-erbij>
+        <i data-lucide="plus"></i> Regel toevoegen
+      </button>
+      <p class="muted klein">Tip: voor korting voeg je een regel toe met een negatieve prijs, bijv. "Korting" met -100.</p>
+
+      <div class="totalen-blok">${totalenBlok(berekenTotalen(bewerkDocument.regels))}</div>
+    </section>
+
+    <section class="panel">
+      <label class="veld">
+        <span>Notities</span>
+        <textarea rows="3" data-doc-veld="notities" placeholder="Bijv. betalingsvoorwaarden">${esc(bewerkDocument.notities)}</textarea>
+      </label>
+    </section>
+
+    <div class="detail__acties">
+      <button class="btn btn--primary" data-document-opslaan>
+        <i data-lucide="save"></i> Opslaan
+      </button>
     </div>
   `;
 }
@@ -1110,6 +1398,97 @@ async function laadGebruikers() {
       api("/api/rechten"),
     ]);
     render();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function laadOffertes() {
+  try {
+    offertes = await api("/api/offertes");
+    render();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function laadFacturen() {
+  try {
+    facturen = await api("/api/facturen");
+    render();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+// ---------- Offertes en facturen: editor ----------
+
+function nieuweRegel() {
+  return { omschrijving: "", aantal: 1, prijsPerStuk: 0, btw: 21 };
+}
+
+function openDocumentEditor(type, bestaand = null, voorinvullen = {}) {
+  bewerkType = type;
+  bewerkId = bestaand?.id || null;
+  bewerkDocument = bestaand
+    ? { ...bestaand }
+    : {
+        klantId: voorinvullen.klantId || "",
+        projectId: voorinvullen.projectId || null,
+        datum: new Date().toISOString().slice(0, 10),
+        vervaldatum: "",
+        regels: [nieuweRegel()],
+        notities: "",
+        status: "concept",
+      };
+  render();
+}
+
+function sluitDocumentEditor(naarPagina) {
+  bewerkType = null;
+  bewerkId = null;
+  bewerkDocument = null;
+  if (naarPagina) gaNaar(naarPagina);
+  else render();
+}
+
+async function slaDocumentOp() {
+  const pad = bewerkType === "factuur" ? "facturen" : "offertes";
+  const naamEnkelvoud = bewerkType === "factuur" ? "Factuur" : "Offerte";
+
+  try {
+    if (bewerkId) {
+      await api(`/api/${pad}/${bewerkId}`, { method: "PATCH", body: JSON.stringify(bewerkDocument) });
+      toast("Opgeslagen");
+    } else {
+      await api(`/api/${pad}`, { method: "POST", body: JSON.stringify(bewerkDocument) });
+      toast(`${naamEnkelvoud} aangemaakt`);
+    }
+    sluitDocumentEditor(pad);
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function omzetNaarFactuur() {
+  try {
+    const factuur = await api(`/api/offertes/${bewerkId}/omzetten`, { method: "POST" });
+    toast(`Factuur ${factuur.nummer} aangemaakt`);
+    await laadFacturen();
+    openDocumentEditor("factuur", factuur);
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function verwijderDocument() {
+  const pad = bewerkType === "factuur" ? "facturen" : "offertes";
+  const naam = bewerkType === "factuur" ? "Factuur" : "Offerte";
+  try {
+    await api(`/api/${pad}/${bewerkId}`, { method: "DELETE" });
+    toast(`${naam} verwijderd`);
+    if (pad === "offertes") await laadOffertes(); else await laadFacturen();
+    sluitDocumentEditor(pad);
   } catch (fout) {
     toast(fout.message, "fout");
   }
@@ -1330,6 +1709,55 @@ function renderInstellingen() {
       </div>
       <p class="muted klein">Maak zelf back-ups: deze mappen staan niet op GitHub.</p>
     </section>
+
+    <section class="panel instellingen-paneel">
+      <header class="panel__head">
+        <div class="panel__titel"><i data-lucide="receipt"></i><h2>Facturatie</h2></div>
+      </header>
+      <p class="muted klein">Deze gegevens komen op elke offerte en factuur te staan.</p>
+
+      ${facturatie ? `
+      <div class="veld-rij">
+        <label class="veld">
+          <span>Bedrijfsnaam</span>
+          <input class="ed-input" id="fact-bedrijfsnaam" type="text" value="${esc(facturatie.bedrijfsnaam)}" ${magBewerken ? "" : "disabled"}>
+        </label>
+        <label class="veld">
+          <span>IBAN</span>
+          <input class="ed-input" id="fact-iban" type="text" value="${esc(facturatie.iban)}" ${magBewerken ? "" : "disabled"}>
+        </label>
+      </div>
+      <label class="veld">
+        <span>Adres</span>
+        <input class="ed-input" id="fact-adres" type="text" value="${esc(facturatie.adres)}" ${magBewerken ? "" : "disabled"}>
+      </label>
+      <div class="veld-rij">
+        <label class="veld">
+          <span>KvK-nummer</span>
+          <input class="ed-input" id="fact-kvknummer" type="text" value="${esc(facturatie.kvkNummer)}" ${magBewerken ? "" : "disabled"}>
+        </label>
+        <label class="veld">
+          <span>BTW-nummer</span>
+          <input class="ed-input" id="fact-btwnummer" type="text" value="${esc(facturatie.btwNummer)}" ${magBewerken ? "" : "disabled"}>
+        </label>
+      </div>
+      <div class="veld-rij">
+        <label class="veld">
+          <span>Volgend offertenummer</span>
+          <input class="ed-input" id="fact-volgend-offerte" type="number" min="1" value="${facturatie.volgendOffertenummer}" ${magBewerken ? "" : "disabled"}>
+        </label>
+        <label class="veld">
+          <span>Volgend factuurnummer</span>
+          <input class="ed-input" id="fact-volgend-factuur" type="number" min="1" value="${facturatie.volgendFactuurnummer}" ${magBewerken ? "" : "disabled"}>
+        </label>
+      </div>
+      ${magBewerken ? `
+      <div class="detail__acties">
+        <button type="button" class="btn btn--primary" id="fact-opslaan">
+          <i data-lucide="save"></i> Opslaan
+        </button>
+      </div>` : ""}` : `<p class="muted klein">Laden…</p>`}
+    </section>
   `;
 }
 
@@ -1429,7 +1857,11 @@ function renderBinnenkort(naam) {
 }
 
 function render() {
-  if (modus === "stijlgids" && stijlgidsBron === "standaard") {
+  if (bewerkType) {
+    const naam = bewerkType === "factuur" ? "Factuur" : "Offerte";
+    titel.textContent = bewerkId ? `${naam} ${bewerkDocument?.nummer ?? ""}` : `Nieuwe ${naam.toLowerCase()}`;
+    renderDocumentEditor();
+  } else if (modus === "stijlgids" && stijlgidsBron === "standaard") {
     titel.textContent = "Instellingen · Standaard stijlgids";
     renderEditor();
   } else if (openProjectId) {
@@ -1449,6 +1881,8 @@ function render() {
     else if (huidigePagina === "projecten") renderProjecten();
     else if (huidigePagina === "stijlgidsen") renderStijlgidsen();
     else if (huidigePagina === "klanten") renderKlanten();
+    else if (huidigePagina === "offertes") renderOffertes();
+    else if (huidigePagina === "facturen") renderFacturen();
     else if (huidigePagina === "gebruikers") renderGebruikers();
     else if (huidigePagina === "instellingen") renderInstellingen();
     else renderBinnenkort(PAGINAS[huidigePagina]);
@@ -1729,6 +2163,9 @@ content.addEventListener("click", (e) => {
     return openProjectFormulier(null, { klant: klant?.naam || "" });
   }
 
+  if (e.target.closest("[data-klant-offerte]")) return openDocumentEditor("offerte", null, { klantId: openKlantId });
+  if (e.target.closest("[data-klant-factuur]")) return openDocumentEditor("factuur", null, { klantId: openKlantId });
+
   const klantWeg = e.target.closest("[data-klant-weg]");
   if (klantWeg) return bevestigKlik(klantWeg, () => verwijderKlant(klantWeg.dataset.klantWeg));
 
@@ -1755,6 +2192,37 @@ content.addEventListener("click", (e) => {
   const gebruikerWeg = e.target.closest("[data-gebruiker-weg]");
   if (gebruikerWeg) return bevestigKlik(gebruikerWeg, () => verwijderGebruiker(gebruikerWeg.dataset.gebruikerWeg));
 
+  // Offertes en facturen
+  if (e.target.closest("[data-nieuwe-offerte]")) return openDocumentEditor("offerte");
+  if (e.target.closest("[data-nieuwe-factuur]")) return openDocumentEditor("factuur");
+
+  const documentOpen = e.target.closest("[data-document-open]");
+  if (documentOpen) {
+    const type = documentOpen.dataset.documentType;
+    const lijst = type === "factuur" ? facturen : offertes;
+    const doc = lijst.find((d) => d.id === documentOpen.dataset.documentOpen);
+    return openDocumentEditor(type, doc);
+  }
+
+  if (e.target.closest("[data-document-terug]")) return sluitDocumentEditor();
+  if (e.target.closest("[data-document-opslaan]")) return slaDocumentOp();
+  if (e.target.closest("[data-omzetten]")) return omzetNaarFactuur();
+
+  const documentWeg = e.target.closest("[data-document-weg]");
+  if (documentWeg) return bevestigKlik(documentWeg, verwijderDocument);
+
+  if (e.target.closest("[data-regel-erbij]")) {
+    bewerkDocument.regels.push(nieuweRegel());
+    return render();
+  }
+
+  const regelWeg = e.target.closest("[data-regel-weg]");
+  if (regelWeg) {
+    if (bewerkDocument.regels.length <= 1) return toast("Er moet minstens 1 regel zijn.", "fout");
+    bewerkDocument.regels.splice(Number(regelWeg.dataset.regelWeg), 1);
+    return render();
+  }
+
   // Instellingen
   if (e.target.closest("#standaard-bewerken")) return bewerkStandaardStijlgids();
   if (e.target.closest("#standaard-overnemen")) return openOvernemenFormulier();
@@ -1764,8 +2232,10 @@ content.addEventListener("click", (e) => {
 
   if (e.target.closest("#logo-kiezen")) return document.getElementById("logo-invoer").click();
   if (e.target.closest("#logo-weg")) return verwijderLogo();
+
   if (e.target.closest("#open-projecten-map")) return openOpslagMap("projecten");
   if (e.target.closest("#open-data-map")) return openOpslagMap("data");
+  if (e.target.closest("#fact-opslaan")) return slaFacturatieOp();
 
   // Bestand verwijderen
   const weg = e.target.closest("[data-verwijder]");
@@ -1802,6 +2272,30 @@ content.addEventListener("change", (e) => {
     uploadLogo(e.target.files[0]);
     e.target.value = "";
   }
+
+  const docVeld = e.target.closest("[data-doc-veld]");
+  if (docVeld) {
+    bewerkDocument[docVeld.dataset.docVeld] = docVeld.value;
+    if (docVeld.dataset.docVeld === "klantId") bewerkDocument.projectId = null;
+    return render();
+  }
+
+  if (e.target.dataset.regel !== undefined && e.target.dataset.eig === "btw") {
+    bewerkDocument.regels[Number(e.target.dataset.regel)].btw = Number(e.target.value);
+    return hertekenDocumentTotalen();
+  }
+});
+
+// Regel-velden van offertes/facturen: direct bijwerken en totalen herberekenen
+content.addEventListener("input", (e) => {
+  if (!bewerkType || e.target.dataset.regel === undefined) return;
+  const regel = bewerkDocument.regels[Number(e.target.dataset.regel)];
+  const eig = e.target.dataset.eig;
+
+  if (eig === "aantal" || eig === "prijsPerStuk") regel[eig] = Number(e.target.value) || 0;
+  else regel[eig] = e.target.value;
+
+  hertekenDocumentTotalen();
 });
 
 // Slepen naar het uploadvlak
@@ -1851,4 +2345,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   laadProjecten();
   laadInstellingen();
   laadPaden();
+  laadOffertes();
+  laadFacturen();
 });

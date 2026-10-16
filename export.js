@@ -85,10 +85,23 @@ async function maakExports(projectMap, data) {
   return gemaakt;
 }
 
+// Losse HTML naar een PDF-bestand (gebruikt voor facturen/offertes)
+async function maakPdfVanHtml(html, bestandspad) {
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  try {
+    await page.setContent(html, { waitUntil: "networkidle0", timeout: 30000 });
+    await wachtOpFonts(page);
+    await page.pdf({ path: bestandspad, format: "A4", printBackground: true, preferCSSPageSize: true });
+  } finally {
+    await page.close();
+  }
+}
+
 async function sluitBrowser() {
   if (!browserBelofte) return;
   const browser = await browserBelofte.catch(() => null);
   if (browser) await browser.close();
 }
 
-module.exports = { maakExports, sluitBrowser };
+module.exports = { maakExports, maakPdfVanHtml, sluitBrowser };

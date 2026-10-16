@@ -12,7 +12,8 @@ const path = require("path");
 const crypto = require("crypto");
 const { execFile } = require("child_process");
 const { standaardStijlgids, normaliseer, maakHtml, genereer } = require("./stijlgids");
-const { maakExports, sluitBrowser } = require("./export");
+const { maakExports, maakPdfVanHtml, sluitBrowser } = require("./export");
+const { BTW_TARIEVEN, normaliseerDocument, maakFactuurHtml, maakOfferteHtml } = require("./facturatie");
 
 const app = express();
 const PORT = 3000;
@@ -25,6 +26,11 @@ const STIJLGIDS_STANDAARD_BESTAND = path.join(DATA_MAP, "stijlgids-standaard.jso
 const GEBRUIKERS_BESTAND = path.join(DATA_MAP, "gebruikers.json");
 const SESSIE_SLEUTEL_BESTAND = path.join(DATA_MAP, "sessie-sleutel.txt");
 const RECHTEN_BESTAND = path.join(DATA_MAP, "rechten.json");
+const FACTURATIE_BESTAND = path.join(DATA_MAP, "facturatie.json");
+const FACTUREN_BESTAND = path.join(DATA_MAP, "facturen.json");
+const OFFERTES_BESTAND = path.join(DATA_MAP, "offertes.json");
+const FACTUREN_MAP = path.join(DATA_MAP, "facturen");
+const OFFERTES_MAP = path.join(DATA_MAP, "offertes");
 
 const STATUSSEN = ["nog-beginnen", "bezig", "wacht-op-klant", "klaar"];
 const SUBMAPPEN = ["site", "images", "documenten", "stijlgids"];
@@ -32,7 +38,9 @@ const SUBMAPPEN_KLANT = ["images", "documenten"];
 const KLANT_VELDEN = ["naam", "bedrijf", "email", "telefoon", "instagram", "website", "notities"];
 const LOGO_TYPES = { "image/png": ".png", "image/jpeg": ".jpg", "image/svg+xml": ".svg", "image/webp": ".webp" };
 const ROLLEN = ["beheerder", "medewerker"];
-const RECHTEN = ["projecten", "klanten", "stijlgidsen", "instellingen"];
+const RECHTEN = ["projecten", "klanten", "stijlgidsen", "instellingen", "facturen"];
+const OFFERTE_STATUSSEN = ["concept", "verzonden", "geaccepteerd", "afgewezen"];
+const FACTUUR_STATUSSEN = ["concept", "verzonden", "betaald"];
 const OPEN_API_PADEN = ["/api/setup-status", "/api/setup", "/api/login", "/api/logout", "/api/sessie"];
 
 app.use(express.json());
@@ -384,6 +392,85 @@ async function leesRuweStandaardStijlgids() {
 async function standaardOfAppStandaard(naam) {
   const ruw = await leesRuweStandaardStijlgids();
   return ruw ? normaliseer(ruw, naam) : standaardStijlgids(naam);
+}
+
+// ---------- Hulpfuncties: facturatie ----------
+
+async function leesFacturatie() {
+  const standaard = {
+    bedrijfsnaam: "", adres: "", kvkNummer: "", btwNummer: "", iban: "",
+    volgendFactuurnummer: 300101,
+    volgendOffertenummer: 1,
+  };
+  try {
+    return { ...standaard, ...JSON.parse(await fs.readFile(FACTURATIE_BESTAND, "utf8")) };
+  } catch {
+    return standaard;
+  }
+}
+
+async function schrijfFacturatie(data) {
+  await fs.mkdir(DATA_MAP, { recursive: true });
+  await fs.writeFile(FACTURATIE_BESTAND, JSON.stringify(data, null, 2));
+}
+
+async function leesFacturen() {
+  try {
+    return JSON.parse(await fs.readFile(FACTUREN_BESTAND, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+async function schrijfFacturen(lijst) {
+  await fs.mkdir(DATA_MAP, { recursive: true });
+  await fs.writeFile(FACTUREN_BESTAND, JSON.stringify(lijst, null, 2));
+}
+
+async function leesOffertes() {
+  try {
+    return JSON.parse(await fs.readFile(OFFERTES_BESTAND, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+async function schrijfOffertes(lijst) {
+  await fs.mkdir(DATA_MAP, { recursive: true });
+  await fs.writeFile(OFFERTES_BESTAND, JSON.stringify(lijst, null, 2));
+}
+
+// Geeft het eerstvolgende nummer en verhoogt meteen de teller
+async function volgendNummer(veld) {
+  const facturatie = await leesFacturatie();
+  const nummer = facturatie[veld];
+  facturatie[veld] = nummer + 1;
+  await schrijfFacturatie(facturatie);
+  return nummer;
+}
+
+// Het logo als data-URI (voor in de factuur/offerte-PDF, geen bestandspad nodig)
+async function logoDataUri() {
+  const bestand = await vindLogoBestand();
+  if (!bestand) return null;
+  const ext = "." + bestand.split(".").pop();
+  const mime = Object.keys(LOGO_TYPES).find((m) => LOGO_TYPES[m] === ext) || "image/png";
+  const data = await fs.readFile(path.join(DATA_MAP, bestand));
+  return `data:${mime};base64,${data.toString("base64")}`;
+}
+
+async function schrijfOffertePdf(offerte) {
+  await fs.mkdir(OFFERTES_MAP, { recursive: true });
+  const klant = (await leesKlanten()).find((k) => k.id === offerte.klantId);
+  const html = maakOfferteHtml(offerte, await leesFacturatie(), klant, await logoDataUri());
+  await maakPdfVanHtml(html, path.join(OFFERTES_MAP, `${offerte.nummer}.pdf`));
+}
+
+async function schrijfFactuurPdf(factuur) {
+  await fs.mkdir(FACTUREN_MAP, { recursive: true });
+  const klant = (await leesKlanten()).find((k) => k.id === factuur.klantId);
+  const html = maakFactuurHtml(factuur, await leesFacturatie(), klant, await logoDataUri());
+  await maakPdfVanHtml(html, path.join(FACTUREN_MAP, `${factuur.nummer}.pdf`));
 }
 
 // ---------- API: inloggen en gebruikers ----------
@@ -971,6 +1058,202 @@ app.post("/api/klanten/:id/open", async (req, res) => {
 
   execFile(commando, [map]);
   res.json({ ok: true });
+});
+
+// ---------- API: facturatie ----------
+
+// Bedrijfsgegevens + volgende nummers
+app.get("/api/facturatie", async (req, res) => {
+  res.json(await leesFacturatie());
+});
+
+app.patch("/api/facturatie", vereistRecht("instellingen"), async (req, res) => {
+  const facturatie = await leesFacturatie();
+
+  for (const veld of ["bedrijfsnaam", "adres", "kvkNummer", "btwNummer", "iban"]) {
+    if (req.body[veld] !== undefined) facturatie[veld] = String(req.body[veld]).slice(0, 200);
+  }
+  for (const veld of ["volgendFactuurnummer", "volgendOffertenummer"]) {
+    const n = Number(req.body[veld]);
+    if (req.body[veld] !== undefined && Number.isInteger(n) && n > 0) facturatie[veld] = n;
+  }
+
+  await schrijfFacturatie(facturatie);
+  res.json(facturatie);
+});
+
+// Offertes
+app.get("/api/offertes", async (req, res) => {
+  res.json((await leesOffertes()).sort((a, b) => b.nummer - a.nummer));
+});
+
+app.post("/api/offertes", vereistRecht("facturen"), async (req, res) => {
+  const doc = normaliseerDocument(req.body);
+  if (!doc.klantId) return res.status(400).json({ fout: "Kies een klant." });
+
+  const lijst = await leesOffertes();
+  const nummer = await volgendNummer("volgendOffertenummer");
+  const nu = new Date().toISOString();
+  const offerte = {
+    id: String(nummer),
+    nummer,
+    ...doc,
+    status: "concept",
+    omgezetNaarFactuurId: null,
+    aangemaakt: nu,
+    bijgewerkt: nu,
+  };
+
+  lijst.push(offerte);
+  await schrijfOffertes(lijst);
+  await schrijfOffertePdf(offerte);
+
+  res.status(201).json(offerte);
+});
+
+app.get("/api/offertes/:id", async (req, res) => {
+  const offerte = (await leesOffertes()).find((o) => o.id === req.params.id);
+  if (!offerte) return res.status(404).json({ fout: "Offerte niet gevonden." });
+  res.json(offerte);
+});
+
+app.patch("/api/offertes/:id", vereistRecht("facturen"), async (req, res) => {
+  const lijst = await leesOffertes();
+  const offerte = lijst.find((o) => o.id === req.params.id);
+  if (!offerte) return res.status(404).json({ fout: "Offerte niet gevonden." });
+
+  if (req.body.status !== undefined) {
+    if (!OFFERTE_STATUSSEN.includes(req.body.status)) return res.status(400).json({ fout: "Onbekende status." });
+    offerte.status = req.body.status;
+  }
+
+  Object.assign(offerte, normaliseerDocument({ ...offerte, ...req.body }));
+  offerte.bijgewerkt = new Date().toISOString();
+  await schrijfOffertes(lijst);
+  await schrijfOffertePdf(offerte);
+
+  res.json(offerte);
+});
+
+app.delete("/api/offertes/:id", vereistRecht("facturen"), async (req, res) => {
+  const lijst = await leesOffertes();
+  if (!lijst.some((o) => o.id === req.params.id)) {
+    return res.status(404).json({ fout: "Offerte niet gevonden." });
+  }
+  await schrijfOffertes(lijst.filter((o) => o.id !== req.params.id));
+  res.json({ ok: true });
+});
+
+// Offerte omzetten naar een nieuwe factuur
+app.post("/api/offertes/:id/omzetten", vereistRecht("facturen"), async (req, res) => {
+  const offertes = await leesOffertes();
+  const offerte = offertes.find((o) => o.id === req.params.id);
+  if (!offerte) return res.status(404).json({ fout: "Offerte niet gevonden." });
+  if (offerte.omgezetNaarFactuurId) {
+    return res.status(409).json({ fout: "Deze offerte is al omgezet naar een factuur." });
+  }
+
+  const facturen = await leesFacturen();
+  const nummer = await volgendNummer("volgendFactuurnummer");
+  const nu = new Date().toISOString();
+  const factuur = {
+    id: String(nummer),
+    nummer,
+    klantId: offerte.klantId,
+    projectId: offerte.projectId,
+    datum: nu.slice(0, 10),
+    vervaldatum: "",
+    regels: offerte.regels,
+    notities: offerte.notities,
+    status: "concept",
+    vanOfferteId: offerte.id,
+    aangemaakt: nu,
+    bijgewerkt: nu,
+  };
+
+  facturen.push(factuur);
+  await schrijfFacturen(facturen);
+  await schrijfFactuurPdf(factuur);
+
+  offerte.omgezetNaarFactuurId = factuur.id;
+  offerte.bijgewerkt = nu;
+  await schrijfOffertes(offertes);
+
+  res.status(201).json(factuur);
+});
+
+app.get("/api/offertes/:id/pdf", async (req, res) => {
+  const offerte = (await leesOffertes()).find((o) => o.id === req.params.id);
+  if (!offerte) return res.status(404).json({ fout: "Offerte niet gevonden." });
+  res.sendFile(path.join(OFFERTES_MAP, `${offerte.nummer}.pdf`));
+});
+
+// Facturen
+app.get("/api/facturen", async (req, res) => {
+  res.json((await leesFacturen()).sort((a, b) => b.nummer - a.nummer));
+});
+
+app.post("/api/facturen", vereistRecht("facturen"), async (req, res) => {
+  const doc = normaliseerDocument(req.body);
+  if (!doc.klantId) return res.status(400).json({ fout: "Kies een klant." });
+
+  const lijst = await leesFacturen();
+  const nummer = await volgendNummer("volgendFactuurnummer");
+  const nu = new Date().toISOString();
+  const factuur = {
+    id: String(nummer),
+    nummer,
+    ...doc,
+    status: "concept",
+    vanOfferteId: null,
+    aangemaakt: nu,
+    bijgewerkt: nu,
+  };
+
+  lijst.push(factuur);
+  await schrijfFacturen(lijst);
+  await schrijfFactuurPdf(factuur);
+
+  res.status(201).json(factuur);
+});
+
+app.get("/api/facturen/:id", async (req, res) => {
+  const factuur = (await leesFacturen()).find((f) => f.id === req.params.id);
+  if (!factuur) return res.status(404).json({ fout: "Factuur niet gevonden." });
+  res.json(factuur);
+});
+
+app.patch("/api/facturen/:id", vereistRecht("facturen"), async (req, res) => {
+  const lijst = await leesFacturen();
+  const factuur = lijst.find((f) => f.id === req.params.id);
+  if (!factuur) return res.status(404).json({ fout: "Factuur niet gevonden." });
+
+  if (req.body.status !== undefined) {
+    if (!FACTUUR_STATUSSEN.includes(req.body.status)) return res.status(400).json({ fout: "Onbekende status." });
+    factuur.status = req.body.status;
+  }
+
+  Object.assign(factuur, normaliseerDocument({ ...factuur, ...req.body }));
+  factuur.bijgewerkt = new Date().toISOString();
+  await schrijfFacturen(lijst);
+  await schrijfFactuurPdf(factuur);
+
+  res.json(factuur);
+});
+
+app.delete("/api/facturen/:id", vereistRecht("facturen"), async (req, res) => {
+  const lijst = await leesFacturen();
+  if (!lijst.some((f) => f.id === req.params.id)) {
+    return res.status(404).json({ fout: "Factuur niet gevonden." });
+  }
+  await schrijfFacturen(lijst.filter((f) => f.id !== req.params.id));
+  res.json({ ok: true });
+});
+
+app.get("/api/facturen/:id/pdf", async (req, res) => {
+  const factuur = (await leesFacturen()).find((f) => f.id === req.params.id);
+  if (!factuur) return res.status(404).json({ fout: "Factuur niet gevonden." });
+  res.sendFile(path.join(FACTUREN_MAP, `${factuur.nummer}.pdf`));
 });
 
 // ---------- API: stijlgids ----------

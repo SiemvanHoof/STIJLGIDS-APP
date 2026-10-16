@@ -1653,6 +1653,42 @@ textarea.ed-input { resize: vertical; line-height: 1.5; }
   accent-color: var(--accent);
 }
 
+/* Offertes en facturen: regel-editor */
+.regel-lijst {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.regel-rij {
+  display: grid;
+  grid-template-columns: 1fr 72px 110px 84px 32px;
+  gap: 8px;
+  align-items: center;
+}
+.regel-rij__aantal, .regel-rij__prijs, .regel-rij__btw { text-align: right; }
+
+.totalen-blok {
+  width: 280px;
+  margin: 16px 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.totalen-blok > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.totalen-blok__eind {
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-strong);
+  font-weight: 600;
+  font-size: 15px;
+}
+
 /* Inlogpagina */
 body.login-pagina {
   display: flex;

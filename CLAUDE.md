@@ -114,17 +114,72 @@ Dat blijft los van de eigen merkkleur van het dashboard hierboven.
 
 ## Status
 
-Klaar: stap 1–11 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
+Klaar: stap 1–12 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
 met live voorbeeld, PDF/PNG-export, flexibele fonts + kopjes over het merk, pagina's Projecten,
 Stijlgidsen en Klanten, Instellingen met studionaam/logo/standaard-stijlgids/opslagpaden,
-inloggen + rollen, fijnmazige rechten per rol, bestanden bij een klant).
+inloggen + rollen, fijnmazige rechten per rol, bestanden bij een klant, facturen & offertes).
 
 Geparkeerd: de PDF moet later een andere opzet krijgen (Siem bepaalt nog hoe, mogelijk liggende
 "borden" zoals een brand-guidelines-presentatie). Niet zelf aanpassen zonder te vragen.
 
-Volgende (in deze volgorde afgesproken): facturen & offertes (echte, verstuurbare facturen
-met BTW/nummering/bedrijfsgegevens) → website-preview per project (de echte, los gebouwde
-site uploaden en bekijken, incl. mappenstructuur) → menu opdelen in gegroepeerde categorieën.
+**Volgende: volledige bedrijfsproces afmaken (afgesproken okt 2026), in deze volgorde:**
+
+Siem wil het hele proces van eerste contact tot oplevering + administratie kunnen doorlopen,
+en dat vanaf de klantpagina kunnen navigeren. Gat-analyse tegen wat er al staat (Klanten,
+Offertes/Facturen, Projecten, Stijlgids, Klantbestanden, Rollen) leverde deze ontbrekende
+stukken op, in de afgesproken bouwvolgorde:
+
+1. Stap 13: prijscalculator (klant kiezen, diensten uit een prijslijst optellen, met één
+   klik een offerte maken) — nog te bouwen
+2. Stap 14: website-preview per project (de echte, los gebouwde site uploaden en bekijken,
+   incl. mappenstructuur) — nog te bouwen
+3. Stap 15: "te laat"-indicator bij facturen (vervaldatum voorbij + niet betaald), hergebruikt
+   `dagenTot()`/`deadlineTekst()`-patroon van projecten — nog te bouwen
+4. Stap 16: financieel overzicht op het Dashboard (omzet deze maand, openstaande facturen) —
+   nog te bouwen
+5. Stap 17: klant-feedback/revisies bijhouden per project (nu alleen vrije notities, geen
+   apart revisie-log) — nog te bouwen
+6. Stap 18: klant-procesoverzicht — de klantpagina wordt het centrale dossier: een
+   stappen-overzicht (offerte → project → stijlgids → website → feedback → oplevering →
+   factuur → betaald) met per stap status en een knop naar de volgende actie — nog te bouwen
+7. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
+   nog te bouwen
+
+Elke stap: eerst een kort plan (plan mode), dan bouwen, dan testen, dan een eigen git-commit
+— zelfde werkwijze als tot nu toe.
+
+## Stap 12: Facturen & offertes (klaar, okt 2026)
+
+Echte, verstuurbare facturen en offertes met BTW per regel (0/9/21%), meerdere regels
+(aantal × prijs per stuk), en doorlopende nummering. Facturen beginnen bij 300101 (op
+Siems verzoek), offertes bij 1 — beide in te stellen bij Instellingen → Facturatie. Een
+offerte kan met één klik omgezet worden naar een factuur (ongeacht status — Siem bepaalt
+zelf wanneer, de knop staat gewoon altijd aan bij een nog niet omgezette offerte), krijgt het
+eerstvolgende factuurnummer, geen hergebruik van het offertenummer.
+
+- **Nieuwe module `facturatie.js`** (naast stijlgids.js, zelfde rol): BTW-rekenwerk
+  (`berekenTotalen`), `normaliseerDocument()`, en `maakFactuurHtml()`/`maakOfferteHtml()`
+  (delen één interne `maakDocumentHtml()` voor de PDF-opmaak — A4, bedrijfsgegevens + logo
+  linksboven, regeltabel, BTW-opbouw per tarief, IBAN onderaan).
+- **`export.js`** heeft er een generieke `maakPdfVanHtml(html, pad)` bij gekregen (gebruikt
+  dezelfde herbruikbare Puppeteer-browser als de stijlgids-PDF's).
+- **Opslag:** `data/facturatie.json` (bedrijfsgegevens + de twee tellers
+  `volgendFactuurnummer`/`volgendOffertenummer`), `data/facturen.json`/`data/offertes.json`
+  (platte lijsten, zelfde patroon als klanten.json), PDF's in `data/facturen/<nummer>.pdf` en
+  `data/offertes/<nummer>.pdf` — net als klantbestanden **niet publiek**, alleen via
+  `GET /api/facturen/:id/pdf` / `GET /api/offertes/:id/pdf` (ingelogd).
+- **Rechten:** nieuw recht `facturen` toegevoegd aan `RECHTEN` (server.js) en
+  `RECHTEN_LABELS` (app.js) — dekt aanmaken/bewerken/verwijderen van beide documenttypes.
+  Bedrijfsgegevens zelf vallen onder het bestaande recht `instellingen`.
+- **Frontend:** geen aparte modal zoals bij projecten/klanten — de regels (aantal × prijs ×
+  BTW, dynamisch toe te voegen/verwijderen) hebben een eigen paneelachtige editor-pagina
+  (`renderDocumentEditor()` in app.js, los van editor.js), met dezelfde dynamische-array-aanpak
+  als de stijlgids-editor gebruikt voor kleuren/fonts (`data-regel="i"` + hertekenen).
+  Live totaal/BTW-opbouw wordt client-side herberekend (`berekenTotalen()`, dezelfde som als
+  server-side) via een losse `.totalen-blok`-herteken, zodat typen in een omschrijving-veld
+  niet de focus verliest.
+- Getest: BTW-rekenwerk en PDF-opmaak rechtstreeks via `facturatie.js`/`export.js` (los van de
+  server) — klopt (zie voorbeeld: €1500 @21% + €120 @9% + €100 @0% → totaal €2.045,80).
 
 ## Stap 11: Bestanden bij een klant (klaar, okt 2026)
 
