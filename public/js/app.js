@@ -736,7 +736,8 @@ function sorteer(lijst) {
 
 // ---------- Onderdelen ----------
 
-function statKaart({ label, waarde, icoon, regelLabel, regelWaarde, kleur, kaartKleur = "", filter }) {
+function statKaart({ label, waarde, icoon, regelLabel, regelWaarde, kleur, kaartKleur = "", filter, linkLabel = "Bekijk projecten", linkNaar = "projecten" }) {
+  const linkAttr = linkNaar === "projecten" ? `data-naar-projecten="${filter}"` : `data-naar-pagina="${linkNaar}"`;
   return `
     <article class="stat ${kaartKleur ? `stat--${kaartKleur}` : ""}">
       <div class="stat__top">
@@ -751,8 +752,8 @@ function statKaart({ label, waarde, icoon, regelLabel, regelWaarde, kleur, kaart
         <span>${regelLabel}</span>
         <strong class="text--${kleur}">${regelWaarde}</strong>
       </div>
-      <button class="stat__link" data-naar-projecten="${filter}">
-        Bekijk projecten <i data-lucide="arrow-right"></i>
+      <button class="stat__link" ${linkAttr}>
+        ${linkLabel} <i data-lucide="arrow-right"></i>
       </button>
     </article>
   `;
@@ -1011,6 +1012,21 @@ function renderDashboard() {
 
   const zonderDeadline = projecten.filter((p) => p.status === "nog-beginnen" && !p.deadline).length;
 
+  const nu = new Date();
+  const betaaldDezeMaand = facturen.filter((f) => {
+    if (f.status !== "betaald") return false;
+    const d = new Date(f.bijgewerkt);
+    return d.getMonth() === nu.getMonth() && d.getFullYear() === nu.getFullYear();
+  });
+  const omzetDezeMaand = betaaldDezeMaand.reduce((som, f) => som + berekenTotalen(f.regels).totaal, 0);
+
+  const openstaand = facturen.filter((f) => f.status !== "betaald");
+  const openstaandBedrag = openstaand.reduce((som, f) => som + berekenTotalen(f.regels).totaal, 0);
+  const teLaat = openstaand.filter((f) => {
+    const dagen = dagenTot(f.vervaldatum);
+    return dagen !== null && dagen < 0;
+  });
+
   const lijst = gefilterdeProjecten(actiefFilter);
   const filterLabel = actiefFilter ? STATUS[actiefFilter].label : "Alle projecten";
 
@@ -1024,6 +1040,12 @@ function renderDashboard() {
         regelLabel: "Deze maand", regelWaarde: klaarDezeMaand, kleur: "green", kaartKleur: "green", filter: "klaar" })}
       ${statKaart({ label: "Nog beginnen", waarde: tel("nog-beginnen"), icoon: "clock",
         regelLabel: "Zonder deadline", regelWaarde: zonderDeadline, kleur: "yellow", kaartKleur: "yellow", filter: "nog-beginnen" })}
+      ${statKaart({ label: "Omzet deze maand", waarde: euro(omzetDezeMaand), icoon: "trending-up",
+        regelLabel: "Facturen betaald", regelWaarde: betaaldDezeMaand.length, kleur: "green", kaartKleur: "green",
+        linkLabel: "Bekijk facturen", linkNaar: "facturen" })}
+      ${statKaart({ label: "Openstaande facturen", waarde: euro(openstaandBedrag), icoon: "receipt",
+        regelLabel: "Te laat", regelWaarde: teLaat.length, kleur: "red",
+        linkLabel: "Bekijk facturen", linkNaar: "facturen" })}
     </div>
 
     <section class="panel">
@@ -2432,6 +2454,9 @@ content.addEventListener("click", (e) => {
     projectFilter = naarProjecten.dataset.naarProjecten;
     return gaNaar("projecten");
   }
+
+  const naarPagina = e.target.closest("[data-naar-pagina]");
+  if (naarPagina) return gaNaar(naarPagina.dataset.naarPagina);
 
   // Filter op de pagina Projecten
   const pfilter = e.target.closest("[data-pfilter]");
