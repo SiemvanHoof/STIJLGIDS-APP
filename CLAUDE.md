@@ -114,11 +114,11 @@ Dat blijft los van de eigen merkkleur van het dashboard hierboven.
 
 ## Status
 
-Klaar: stap 1–13 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
+Klaar: stap 1–14 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
 met live voorbeeld, PDF/PNG-export, flexibele fonts + kopjes over het merk, pagina's Projecten,
 Stijlgidsen en Klanten, Instellingen met studionaam/logo/standaard-stijlgids/opslagpaden,
 inloggen + rollen, fijnmazige rechten per rol, bestanden bij een klant, facturen & offertes,
-prijscalculator).
+prijscalculator, website-preview per project).
 
 Geparkeerd: de PDF moet later een andere opzet krijgen (Siem bepaalt nog hoe, mogelijk liggende
 "borden" zoals een brand-guidelines-presentatie). Niet zelf aanpassen zonder te vragen.
@@ -130,22 +130,50 @@ en dat vanaf de klantpagina kunnen navigeren. Gat-analyse tegen wat er al staat 
 Prijscalculator, Offertes/Facturen, Projecten, Stijlgids, Klantbestanden, Rollen) leverde deze
 ontbrekende stukken op, in de afgesproken bouwvolgorde:
 
-1. Stap 14: website-preview per project (de echte, los gebouwde site uploaden en bekijken,
-   incl. mappenstructuur) — nog te bouwen
-2. Stap 15: "te laat"-indicator bij facturen (vervaldatum voorbij + niet betaald), hergebruikt
+1. Stap 15: "te laat"-indicator bij facturen (vervaldatum voorbij + niet betaald), hergebruikt
    `dagenTot()`/`deadlineTekst()`-patroon van projecten — nog te bouwen
-3. Stap 16: financieel overzicht op het Dashboard (omzet deze maand, openstaande facturen) —
+2. Stap 16: financieel overzicht op het Dashboard (omzet deze maand, openstaande facturen) —
    nog te bouwen
-4. Stap 17: klant-feedback/revisies bijhouden per project (nu alleen vrije notities, geen
+3. Stap 17: klant-feedback/revisies bijhouden per project (nu alleen vrije notities, geen
    apart revisie-log) — nog te bouwen
-5. Stap 18: klant-procesoverzicht — de klantpagina wordt het centrale dossier: een
-   stappen-overzicht (offerte → project → stijlgids → website → feedback → oplevering →
-   factuur → betaald) met per stap status en een knop naar de volgende actie — nog te bouwen
-6. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
+4. Stap 18: klant-procesoverzicht — de klantpagina wordt het centrale dossier: een
+   stappen-overzicht (**intake/gesprek** → offerte → project → stijlgids → website →
+   feedback → oplevering → factuur → betaald) met per stap status en een knop naar de
+   volgende actie — nog te bouwen. Intake-deel (afgesproken okt 2026): klant toevoegen bij
+   eerste contact (kan al) → na het gesprek een gespreksverslag bij de klant zetten → met één
+   klik een project aanmaken dat eraan gekoppeld is. Geen AI/automatische extractie — het
+   project krijgt gewoon de standaard-stijlgids die nieuwe projecten al automatisch krijgen,
+   Siem vult 'm zelf in zoals nu. Nieuw nodig: een plek voor het gespreksverslag op de
+   klantpagina (apart veld, of het bestaande `notities`-veld hiervoor gebruiken — nog te
+   kiezen) en een "Maak project van dit gesprek"-knop.
+5. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
    nog te bouwen
 
 Elke stap: eerst een kort plan (plan mode), dan bouwen, dan testen, dan een eigen git-commit
 — zelfde werkwijze als tot nu toe.
+
+## Stap 14: Website-preview per project (klaar, getest, okt 2026)
+
+De échte, los gebouwde website van een project uploaden en bekijken (incl. mappenstructuur),
+los van de auto-gegenereerde stijlgids-site onder `site/index.html`.
+
+- Server: `veiligRelatiefPad()` + multer-instance `uploadWebsite` (server.js), routes
+  `POST/GET/DELETE /api/projecten/:id/website`. `projectExtra()` geeft een `website`-url
+  terug als `website/index.html` bestaat. Bestaande upload vervangen = oude versie naar
+  `.prullenbak/website-<tijdstip>/`, net als bij andere verwijderingen.
+- Frontend: sectie "Website" op de projectpagina (bestandskiezer met `webkitdirectory`,
+  iframe-preview, platte bestandenlijst), nieuwe pagina **Websites** die alle projecten met
+  een geüploade website toont.
+- **Bug gevonden tijdens testen, meteen gefixt**: multer/busboy haalt altijd het pad uit
+  `file.originalname`, óók als de client zelf een bestandsnaam met `/` erin meestuurt — dat
+  is ingebouwd gedrag van die library, geen edge case. Daardoor landden alle bestanden van
+  een geüploade map plat in `website/`, submappen gingen verloren. Fix: de client
+  (`uploadWebsiteBestanden()` in app.js) stuurt de relatieve paden nu apart mee als JSON in
+  een `paden`-veld, vóór de bestanden zelf; de server matcht ze op volgorde via een teller op
+  `req` (zie het commentaar bij `uploadWebsite` in server.js).
+- Bewust **niet** gebouwd: slepen-en-droppen van een hele map (vereist
+  `DataTransferItem.webkitGetAsEntry()`, aanzienlijk complexer) — alleen de
+  bestandskiezer-knop met `webkitdirectory`.
 
 ## Stap 13: Prijscalculator (klaar, okt 2026)
 
