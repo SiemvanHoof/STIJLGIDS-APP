@@ -14,9 +14,11 @@ const PAGINAS = {
   dashboard:    "Dashboard",
   projecten:    "Projecten",
   stijlgidsen:  "Stijlgidsen",
+  websites:     "Websites",
   klanten:      "Klanten",
   offertes:     "Offertes",
   facturen:     "Facturen",
+  prijscalculator: "Prijscalculator",
   gebruikers:   "Gebruikers",
   instellingen: "Instellingen",
 };
@@ -68,6 +70,7 @@ let openProjectId = null;
 let openKlantId = null;
 let bestanden = null;
 let klantBestanden = null;
+let websiteBestanden = null; // { bestaat, heeftIndex, bestanden } van het open project
 let zoekterm = "";
 let actiefFilter = "";       // filter op het dashboard
 let projectFilter = "";      // filter op de pagina Projecten
@@ -82,6 +85,9 @@ let gebruikers = [];          // alleen geladen voor de pagina Gebruikers (behee
 let rechten = null;           // rechten van de rol Medewerker, alleen geladen voor beheerders
 let offertes = [];
 let facturen = [];
+let diensten = [];
+let calculatorKlantId = "";   // gekozen klant op de pagina Prijscalculator
+const calculatorAantallen = {}; // { dienstId: aantal } — alleen lokale staat, niet opgeslagen
 let bewerkType = null;        // "offerte" | "factuur" | null — bepaalt of de document-editor toont
 let bewerkId = null;          // bestaand document-id, of null bij een nieuwe
 let bewerkDocument = null;    // { klantId, projectId, datum, vervaldatum, regels, notities, status }
@@ -250,6 +256,7 @@ function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "proje
   bewerkDocument = null;
   bestanden = null;
   klantBestanden = null;
+  websiteBestanden = null;
   stijlgids = null;
 
   document.querySelectorAll(".nav__item").forEach((item) => {
@@ -257,7 +264,7 @@ function gaNaar(pagina, projectId = null, { opslaan = true, nieuweModus = "proje
   });
 
   render();
-  if (projectId && modus === "project") laadBestanden();
+  if (projectId && modus === "project") { laadBestanden(); laadWebsiteBestanden(); }
   if (projectId && modus === "stijlgids") laadStijlgids();
   if (!projectId && openKlantId) laadKlantBestanden();
   if (pagina === "instellingen" && !projectId) { laadInstellingenStijlgids(); laadFacturatie(); }
@@ -583,6 +590,56 @@ async function verwijderBestand(map, naam) {
     });
     toast(`"${naam}" naar de prullenbak verplaatst`);
     await laadBestanden();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function laadWebsiteBestanden() {
+  if (!openProjectId) return;
+  try {
+    websiteBestanden = await api(`/api/projecten/${openProjectId}/website`);
+  } catch (fout) {
+    toast(fout.message, "fout");
+    websiteBestanden = { bestaat: false, heeftIndex: false, bestanden: [] };
+  }
+  render();
+}
+
+async function uploadWebsiteBestanden(lijst) {
+  if (!lijst.length || !openProjectId) return;
+
+  const formData = new FormData();
+  // Paden apart meesturen (vóór de bestanden): de bestandsnaam zelf verliest het pad
+  // onderweg (multer/busboy houdt altijd alleen de bestandsnaam over uit "filename",
+  // ook als je er zelf een pad met "/" in zet).
+  formData.append("paden", JSON.stringify(lijst.map((bestand) => bestand.webkitRelativePath || bestand.name)));
+  for (const bestand of lijst) {
+    formData.append("bestanden", bestand);
+  }
+
+  toast(`Website uploaden (${lijst.length} ${lijst.length === 1 ? "bestand" : "bestanden"})…`);
+
+  try {
+    const res = await fetch(`/api/projecten/${openProjectId}/website`, {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.fout || "Uploaden mislukt.");
+
+    toast(`Website geüpload (${data.aantal} bestanden)`);
+    await laadWebsiteBestanden();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function verwijderWebsite() {
+  try {
+    await api(`/api/projecten/${openProjectId}/website`, { method: "DELETE" });
+    toast("Website verwijderd");
+    await laadWebsiteBestanden();
   } catch (fout) {
     toast(fout.message, "fout");
   }
@@ -1048,6 +1105,49 @@ function renderStijlgidsen() {
   `;
 }
 
+function websiteKaart(project) {
+  const id = esc(project.id);
+  return `
+    <article class="skaart">
+      ${kaartBeeld(project, `data-project="${id}"`)}
+      <div class="skaart__body">
+        <div>
+          <h3 class="skaart__naam">${esc(project.naam)}</h3>
+          <p class="muted klein">${esc(project.klant || "Geen klant")}</p>
+        </div>
+        <div class="skaart__acties">
+          <a class="btn btn--ghost" href="${esc(project.website)}" target="_blank" rel="noopener">
+            <i data-lucide="external-link"></i> Bekijk website
+          </a>
+          <button class="btn btn--primary" data-project="${id}">
+            <i data-lucide="folder-open"></i> Open project
+          </button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderWebsites() {
+  const term = zoekterm.trim().toLowerCase();
+  const metWebsite = sorteer(projecten.filter((p) => p.website))
+    .filter((p) => !term || `${p.naam} ${p.klant}`.toLowerCase().includes(term));
+
+  content.innerHTML = `
+    <div class="toolbar">
+      <p class="muted">${metWebsite.length} ${metWebsite.length === 1 ? "website" : "websites"}</p>
+    </div>
+
+    ${metWebsite.length
+      ? `<div class="kaart-grid kaart-grid--breed">${metWebsite.map(websiteKaart).join("")}</div>`
+      : `<section class="panel">${legeStaat(
+          "globe",
+          term ? "Geen websites gevonden" : "Nog geen websites geüpload",
+          term ? "Probeer een andere zoekterm." : "Open een project en upload daar de website die je los hebt gebouwd."
+        )}</section>`}
+  `;
+}
+
 function renderKlanten() {
   const term = zoekterm.trim().toLowerCase();
   const lijst = klanten.filter((k) =>
@@ -1249,6 +1349,147 @@ function renderFacturen() {
   `;
 }
 
+// ---------- Prijscalculator ----------
+
+function calculatorRegels() {
+  return diensten
+    .filter((d) => (calculatorAantallen[d.id] || 0) > 0)
+    .map((d) => ({ omschrijving: d.naam, aantal: calculatorAantallen[d.id], prijsPerStuk: d.prijs, btw: d.btw }));
+}
+
+function hertekenCalculatorTotalen() {
+  const blok = document.querySelector(".totalen-blok");
+  if (blok) blok.innerHTML = totalenBlok(berekenTotalen(calculatorRegels()));
+
+  const knop = document.getElementById("calculator-naar-offerte");
+  if (knop) knop.disabled = calculatorRegels().length === 0;
+}
+
+function dienstRij(dienst) {
+  return `
+    <div class="dienst-rij">
+      <span class="dienst-rij__naam">${esc(dienst.naam)}</span>
+      <span class="muted klein">${euro(dienst.prijs)} · BTW ${dienst.btw}%</span>
+      <input type="number" min="0" class="ed-input" data-dienst-aantal="${esc(dienst.id)}" value="${calculatorAantallen[dienst.id] || 0}" aria-label="Aantal ${esc(dienst.naam)}">
+    </div>
+  `;
+}
+
+function dienstBeheerRij(dienst) {
+  return `
+    <article class="project">
+      <span class="project__info">
+        <span class="project__meta">${euro(dienst.prijs)} · BTW ${dienst.btw}%${dienst.omschrijving ? ` · ${esc(dienst.omschrijving)}` : ""}</span>
+        <span class="project__naam">${esc(dienst.naam)}</span>
+      </span>
+      ${magIk("facturen") ? `
+      <div class="project__acties">
+        <button class="icon-btn" data-dienst-bewerk="${esc(dienst.id)}" title="Bewerken"><i data-lucide="pencil"></i></button>
+        <button class="icon-btn" data-dienst-weg="${esc(dienst.id)}" title="Verwijderen"><i data-lucide="trash-2"></i></button>
+      </div>` : ""}
+    </article>
+  `;
+}
+
+function renderPrijscalculator() {
+  const klantOpties = `<option value="">Kies een klant</option>` + klanten
+    .map((k) => `<option value="${esc(k.id)}" ${k.id === calculatorKlantId ? "selected" : ""}>${esc(k.naam)}</option>`)
+    .join("");
+
+  content.innerHTML = `
+    <section class="panel">
+      <label class="veld">
+        <span>Klant</span>
+        <select id="calculator-klant">${klantOpties}</select>
+      </label>
+    </section>
+
+    ${calculatorKlantId ? `
+    <section class="panel">
+      <p class="sectie-label">Opties</p>
+      ${diensten.length
+        ? `<div class="dienst-lijst">${diensten.map(dienstRij).join("")}</div>
+           <div class="totalen-blok">${totalenBlok(berekenTotalen(calculatorRegels()))}</div>
+           <div class="detail__acties">
+             <button type="button" class="btn btn--primary" id="calculator-naar-offerte" ${calculatorRegels().length ? "" : "disabled"}>
+               <i data-lucide="file-text"></i> Maak offerte van deze berekening
+             </button>
+           </div>`
+        : legeStaat("list-plus", "Nog geen diensten", "Voeg hieronder je eerste dienst toe.")}
+    </section>` : `<section class="panel">${legeStaat("user", "Kies eerst een klant", "Dan zie je hier de opties en het totaal.")}</section>`}
+
+    <section class="panel">
+      <header class="panel__head">
+        <div class="panel__titel">
+          <i data-lucide="list-plus"></i>
+          <h2>Diensten beheren</h2>
+          <span class="teller">${diensten.length}</span>
+        </div>
+        ${magIk("facturen") ? `
+        <button class="btn btn--primary" id="nieuwe-dienst">
+          <i data-lucide="plus"></i> Nieuwe dienst
+        </button>` : ""}
+      </header>
+      <div class="project-lijst">
+        ${diensten.length
+          ? diensten.map(dienstBeheerRij).join("")
+          : legeStaat("list-plus", "Nog geen diensten", "Voeg je eerste dienst toe.")}
+      </div>
+    </section>
+  `;
+}
+
+function openDienstFormulier(dienst = null) {
+  const btwOpties = BTW_TARIEVEN
+    .map((t) => `<option value="${t}" ${(dienst ? dienst.btw === t : t === 21) ? "selected" : ""}>${t}%</option>`)
+    .join("");
+
+  openModal({
+    kop: dienst ? "Dienst bewerken" : "Nieuwe dienst",
+    knop: dienst ? "Opslaan" : "Toevoegen",
+    inhoud: `
+      <label class="veld">
+        <span>Naam</span>
+        <input name="naam" type="text" placeholder="Bijv. Extra pagina" value="${esc(dienst?.naam || "")}" required>
+      </label>
+      <div class="veld-rij">
+        <label class="veld">
+          <span>Prijs (excl. BTW)</span>
+          <input name="prijs" type="number" min="0" step="0.01" value="${dienst?.prijs ?? ""}" required>
+        </label>
+        <label class="veld">
+          <span>BTW</span>
+          <select name="btw">${btwOpties}</select>
+        </label>
+      </div>
+      <label class="veld">
+        <span>Omschrijving (optioneel)</span>
+        <input name="omschrijving" type="text" value="${esc(dienst?.omschrijving || "")}">
+      </label>
+    `,
+    opslaan: async (data) => {
+      if (dienst) {
+        await api(`/api/diensten/${dienst.id}`, { method: "PATCH", body: JSON.stringify(data) });
+        toast("Dienst opgeslagen");
+      } else {
+        await api("/api/diensten", { method: "POST", body: JSON.stringify(data) });
+        toast("Dienst toegevoegd");
+      }
+      await laadDiensten();
+    },
+  });
+}
+
+async function verwijderDienst(id) {
+  try {
+    await api(`/api/diensten/${id}`, { method: "DELETE" });
+    toast("Dienst verwijderd");
+    await laadDiensten();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
 function regelRij(r, i) {
   return `
     <div class="regel-rij">
@@ -1421,6 +1662,15 @@ async function laadFacturen() {
   }
 }
 
+async function laadDiensten() {
+  try {
+    diensten = await api("/api/diensten");
+    render();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
 // ---------- Offertes en facturen: editor ----------
 
 function nieuweRegel() {
@@ -1437,7 +1687,7 @@ function openDocumentEditor(type, bestaand = null, voorinvullen = {}) {
         projectId: voorinvullen.projectId || null,
         datum: new Date().toISOString().slice(0, 10),
         vervaldatum: "",
-        regels: [nieuweRegel()],
+        regels: voorinvullen.regels?.length ? voorinvullen.regels : [nieuweRegel()],
         notities: "",
         status: "concept",
       };
@@ -1835,6 +2085,49 @@ function renderProject() {
       </div>
     </section>
 
+    <section class="panel">
+      <div class="stijlgids-kaart">
+        <div class="stijlgids-kaart__tekst">
+          <div class="icon-tile"><i data-lucide="globe"></i></div>
+          <div>
+            <h2>Website</h2>
+            <p class="muted">De echte website die je los bouwt. Upload de map met bestanden om 'm hier te bekijken.</p>
+          </div>
+        </div>
+        <div class="detail__acties">
+          ${websiteBestanden?.heeftIndex ? `
+          <a class="btn btn--ghost" href="/projecten/${esc(p.id)}/website/index.html" target="_blank" rel="noopener">
+            <i data-lucide="external-link"></i> Open in nieuw tabblad
+          </a>` : ""}
+          ${magIk("projecten") ? `
+          <input type="file" webkitdirectory multiple id="website-input" hidden>
+          <button type="button" class="btn btn--primary" id="website-kiezen">
+            <i data-lucide="upload"></i> ${websiteBestanden?.bestaat ? "Nieuwe versie uploaden" : "Map kiezen"}
+          </button>
+          ${websiteBestanden?.bestaat ? `
+          <button type="button" class="btn btn--ghost" id="website-weg">
+            <i data-lucide="trash-2"></i> Verwijderen
+          </button>` : ""}` : ""}
+        </div>
+      </div>
+
+      ${websiteBestanden?.heeftIndex ? `
+      <div class="website-voorbeeld">
+        <div class="voorbeeld-balk">
+          <span class="dot dot--red"></span>
+          <span class="dot dot--yellow"></span>
+          <span class="dot dot--green"></span>
+          <span class="voorbeeld-balk__url">projecten/${esc(p.id)}/website/index.html</span>
+        </div>
+        <iframe id="website-voorbeeld" title="Voorbeeld van de website" src="/projecten/${esc(p.id)}/website/index.html"></iframe>
+      </div>` : websiteBestanden?.bestaat ? `<p class="muted klein">Geen index.html bovenin de map gevonden — er is geen preview te tonen.</p>` : ""}
+
+      ${websiteBestanden?.bestanden?.length ? `
+      <ul class="website-bestanden">
+        ${websiteBestanden.bestanden.map((b) => `<li><code>${esc(b.pad)}</code> <span class="muted klein">${formatGrootte(b.grootte)}</span></li>`).join("")}
+      </ul>` : ""}
+    </section>
+
     <label class="dropzone" id="dropzone">
       <input type="file" multiple id="upload-input" hidden>
       <div class="icon-tile"><i data-lucide="upload"></i></div>
@@ -1880,9 +2173,11 @@ function render() {
     if (huidigePagina === "dashboard") renderDashboard();
     else if (huidigePagina === "projecten") renderProjecten();
     else if (huidigePagina === "stijlgidsen") renderStijlgidsen();
+    else if (huidigePagina === "websites") renderWebsites();
     else if (huidigePagina === "klanten") renderKlanten();
     else if (huidigePagina === "offertes") renderOffertes();
     else if (huidigePagina === "facturen") renderFacturen();
+    else if (huidigePagina === "prijscalculator") renderPrijscalculator();
     else if (huidigePagina === "gebruikers") renderGebruikers();
     else if (huidigePagina === "instellingen") renderInstellingen();
     else renderBinnenkort(PAGINAS[huidigePagina]);
@@ -2211,6 +2506,19 @@ content.addEventListener("click", (e) => {
   const documentWeg = e.target.closest("[data-document-weg]");
   if (documentWeg) return bevestigKlik(documentWeg, verwijderDocument);
 
+  // Prijscalculator
+  if (e.target.closest("#nieuwe-dienst")) return openDienstFormulier();
+
+  const dienstBewerk = e.target.closest("[data-dienst-bewerk]");
+  if (dienstBewerk) return openDienstFormulier(diensten.find((d) => d.id === dienstBewerk.dataset.dienstBewerk));
+
+  const dienstWeg = e.target.closest("[data-dienst-weg]");
+  if (dienstWeg) return bevestigKlik(dienstWeg, () => verwijderDienst(dienstWeg.dataset.dienstWeg));
+
+  if (e.target.closest("#calculator-naar-offerte")) {
+    return openDocumentEditor("offerte", null, { klantId: calculatorKlantId, regels: calculatorRegels() });
+  }
+
   if (e.target.closest("[data-regel-erbij]")) {
     bewerkDocument.regels.push(nieuweRegel());
     return render();
@@ -2233,6 +2541,9 @@ content.addEventListener("click", (e) => {
   if (e.target.closest("#logo-kiezen")) return document.getElementById("logo-invoer").click();
   if (e.target.closest("#logo-weg")) return verwijderLogo();
 
+  if (e.target.closest("#website-kiezen")) return document.getElementById("website-input").click();
+  const websiteWeg = e.target.closest("#website-weg");
+  if (websiteWeg) return bevestigKlik(websiteWeg, verwijderWebsite);
   if (e.target.closest("#open-projecten-map")) return openOpslagMap("projecten");
   if (e.target.closest("#open-data-map")) return openOpslagMap("data");
   if (e.target.closest("#fact-opslaan")) return slaFacturatieOp();
@@ -2273,6 +2584,16 @@ content.addEventListener("change", (e) => {
     e.target.value = "";
   }
 
+  if (e.target.id === "website-input") {
+    uploadWebsiteBestanden(e.target.files);
+    e.target.value = "";
+  }
+
+  if (e.target.id === "calculator-klant") {
+    calculatorKlantId = e.target.value;
+    return render();
+  }
+
   const docVeld = e.target.closest("[data-doc-veld]");
   if (docVeld) {
     bewerkDocument[docVeld.dataset.docVeld] = docVeld.value;
@@ -2288,6 +2609,11 @@ content.addEventListener("change", (e) => {
 
 // Regel-velden van offertes/facturen: direct bijwerken en totalen herberekenen
 content.addEventListener("input", (e) => {
+  if (e.target.dataset.dienstAantal !== undefined) {
+    calculatorAantallen[e.target.dataset.dienstAantal] = Number(e.target.value) || 0;
+    return hertekenCalculatorTotalen();
+  }
+
   if (!bewerkType || e.target.dataset.regel === undefined) return;
   const regel = bewerkDocument.regels[Number(e.target.dataset.regel)];
   const eig = e.target.dataset.eig;
@@ -2347,4 +2673,5 @@ window.addEventListener("DOMContentLoaded", async () => {
   laadPaden();
   laadOffertes();
   laadFacturen();
+  laadDiensten();
 });

@@ -114,10 +114,11 @@ Dat blijft los van de eigen merkkleur van het dashboard hierboven.
 
 ## Status
 
-Klaar: stap 1–12 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
+Klaar: stap 1–13 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
 met live voorbeeld, PDF/PNG-export, flexibele fonts + kopjes over het merk, pagina's Projecten,
 Stijlgidsen en Klanten, Instellingen met studionaam/logo/standaard-stijlgids/opslagpaden,
-inloggen + rollen, fijnmazige rechten per rol, bestanden bij een klant, facturen & offertes).
+inloggen + rollen, fijnmazige rechten per rol, bestanden bij een klant, facturen & offertes,
+prijscalculator).
 
 Geparkeerd: de PDF moet later een andere opzet krijgen (Siem bepaalt nog hoe, mogelijk liggende
 "borden" zoals een brand-guidelines-presentatie). Niet zelf aanpassen zonder te vragen.
@@ -126,27 +127,54 @@ Geparkeerd: de PDF moet later een andere opzet krijgen (Siem bepaalt nog hoe, mo
 
 Siem wil het hele proces van eerste contact tot oplevering + administratie kunnen doorlopen,
 en dat vanaf de klantpagina kunnen navigeren. Gat-analyse tegen wat er al staat (Klanten,
-Offertes/Facturen, Projecten, Stijlgids, Klantbestanden, Rollen) leverde deze ontbrekende
-stukken op, in de afgesproken bouwvolgorde:
+Prijscalculator, Offertes/Facturen, Projecten, Stijlgids, Klantbestanden, Rollen) leverde deze
+ontbrekende stukken op, in de afgesproken bouwvolgorde:
 
-1. Stap 13: prijscalculator (klant kiezen, diensten uit een prijslijst optellen, met één
-   klik een offerte maken) — nog te bouwen
-2. Stap 14: website-preview per project (de echte, los gebouwde site uploaden en bekijken,
+1. Stap 14: website-preview per project (de echte, los gebouwde site uploaden en bekijken,
    incl. mappenstructuur) — nog te bouwen
-3. Stap 15: "te laat"-indicator bij facturen (vervaldatum voorbij + niet betaald), hergebruikt
+2. Stap 15: "te laat"-indicator bij facturen (vervaldatum voorbij + niet betaald), hergebruikt
    `dagenTot()`/`deadlineTekst()`-patroon van projecten — nog te bouwen
-4. Stap 16: financieel overzicht op het Dashboard (omzet deze maand, openstaande facturen) —
+3. Stap 16: financieel overzicht op het Dashboard (omzet deze maand, openstaande facturen) —
    nog te bouwen
-5. Stap 17: klant-feedback/revisies bijhouden per project (nu alleen vrije notities, geen
+4. Stap 17: klant-feedback/revisies bijhouden per project (nu alleen vrije notities, geen
    apart revisie-log) — nog te bouwen
-6. Stap 18: klant-procesoverzicht — de klantpagina wordt het centrale dossier: een
+5. Stap 18: klant-procesoverzicht — de klantpagina wordt het centrale dossier: een
    stappen-overzicht (offerte → project → stijlgids → website → feedback → oplevering →
    factuur → betaald) met per stap status en een knop naar de volgende actie — nog te bouwen
-7. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
+6. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
    nog te bouwen
 
 Elke stap: eerst een kort plan (plan mode), dan bouwen, dan testen, dan een eigen git-commit
 — zelfde werkwijze als tot nu toe.
+
+## Stap 13: Prijscalculator (klaar, okt 2026)
+
+Nieuwe pagina waar je eerst een klant kiest, dan per dienst uit een zelfbeheerde prijslijst
+een aantal invult (0 = niet meegerekend), live het totaal/BTW ziet, en met één klik een
+offerte maakt met die regels al ingevuld.
+
+- `data/diensten.json`: platte lijst `{ id, naam, prijs, btw, omschrijving }`. CRUD onder
+  `/api/diensten(/:id)`, schrijvend achter `vereistRecht("facturen")` (zelfde recht als
+  offertes/facturen), lezen open voor elke ingelogde gebruiker.
+- Hergebruikt het regel/BTW-systeem van Stap 12 bijna volledig: een geselecteerde dienst
+  wordt gewoon een regel `{ omschrijving, aantal, prijsPerStuk, btw }`.
+  `openDocumentEditor()` (app.js) kreeg er daarvoor een derde, optionele
+  `voorinvullen.regels` bij — als gegeven vult die de offerte-editor meteen met die regels
+  in plaats van één lege standaardregel.
+- Lokale (niet-opgeslagen) staat in app.js: `calculatorKlantId` en `calculatorAantallen`
+  (plain object `{dienstId: aantal}`) — leven alleen in de browser, resetten bij een
+  page-herlaad. Dat is bewust: de calculator is een hulpmiddel om tot een offerte te komen,
+  geen eigen opgeslagen document.
+- `data/diensten.json` is vooraf gevuld met 12 simpele standaardopties, prijs per pagina
+  (€100) als basis-eenheid — gewone dingen zoals een contactformulier zitten daarbij in,
+  geen aparte regels voor kleine dingen. Verder: webshop-module, uurtarieven
+  (development/design), logo/huisstijl, SEO, meertaligheid, hosting/onderhoud/domein, en een
+  "Korting"-dienst. **Dit zijn door Claude bedachte, bewust lage placeholder-bedragen — geen
+  echte prijzen van Siem.** Hij past ze zelf aan via "Diensten beheren" op de
+  Prijscalculator-pagina zodra hij zijn eigen tarieven kent.
+- Korting kan met een negatief bedrag als regel (reken-logica ondersteunde dit al via
+  `berekenTotalen()`; de `min="0"` op het prijsveld in `regelRij()` is eraf gehaald zodat dit
+  ook echt getypt kan worden).
 
 ## Stap 12: Facturen & offertes (klaar, okt 2026)
 

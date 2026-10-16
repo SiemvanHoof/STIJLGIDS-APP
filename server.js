@@ -29,6 +29,7 @@ const RECHTEN_BESTAND = path.join(DATA_MAP, "rechten.json");
 const FACTURATIE_BESTAND = path.join(DATA_MAP, "facturatie.json");
 const FACTUREN_BESTAND = path.join(DATA_MAP, "facturen.json");
 const OFFERTES_BESTAND = path.join(DATA_MAP, "offertes.json");
+const DIENSTEN_BESTAND = path.join(DATA_MAP, "diensten.json");
 const FACTUREN_MAP = path.join(DATA_MAP, "facturen");
 const OFFERTES_MAP = path.join(DATA_MAP, "offertes");
 
@@ -117,7 +118,14 @@ async function alleProjectIds() {
 // Cover en een korte samenvatting van de stijlgids (voor de kaarten en de galerij)
 async function projectExtra(id) {
   const map = projectPad(id);
-  const extra = { cover: null, stijl: null };
+  const extra = { cover: null, stijl: null, website: null };
+
+  try {
+    const info = await fs.stat(path.join(map, "website", "index.html"));
+    extra.website = `/projecten/${path.basename(map)}/website/index.html?v=${Math.round(info.mtimeMs)}`;
+  } catch {
+    // nog geen website geüpload
+  }
 
   for (const naam of ["cover.png", "cover.svg"]) {
     try {
@@ -438,6 +446,19 @@ async function leesOffertes() {
 async function schrijfOffertes(lijst) {
   await fs.mkdir(DATA_MAP, { recursive: true });
   await fs.writeFile(OFFERTES_BESTAND, JSON.stringify(lijst, null, 2));
+}
+
+async function leesDiensten() {
+  try {
+    return JSON.parse(await fs.readFile(DIENSTEN_BESTAND, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+async function schrijfDiensten(lijst) {
+  await fs.mkdir(DATA_MAP, { recursive: true });
+  await fs.writeFile(DIENSTEN_BESTAND, JSON.stringify(lijst, null, 2));
 }
 
 // Geeft het eerstvolgende nummer en verhoogt meteen de teller
@@ -862,6 +883,121 @@ app.post("/api/projecten/:id/open", (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- API: website-preview ----------
+// De echte, los gebouwde website van een project (anders dan de gegenereerde stijlgids-site)
+
+// Haalt de lokale mapnaam (eerste padsegment van webkitRelativePath) eraf en voorkomt
+// path-traversal, zodat "mijn-site/css/stijl.css" -> "css/stijl.css" wordt.
+function veiligRelatiefPad(naam) {
+  const delen = String(naam)
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((d) => d && d !== "." && d !== "..");
+  delen.shift();
+  if (!delen.length) delen.push(path.basename(String(naam)) || "bestand");
+  return delen.join("/");
+}
+
+const uploadWebsite = multer({
+  storage: multer.diskStorage({
+    // Let op: multer/busboy geeft in `file.originalname` altijd alleen de kale
+    // bestandsnaam terug, ook als de client een pad met "/" als filename meestuurt
+    // (bv. "mijn-site/css/stijl.css") — dat deel van het pad wordt onderweg al
+    // weggefilterd. Daarom stuurt de client de originele paden apart mee als JSON in
+    // het "paden"-veld (vóór de bestanden zelf, zodat het al binnen is tegen de tijd
+    // dat het eerste bestand verwerkt wordt) en matchen we hier op volgorde.
+    destination: (req, file, cb) => {
+      try {
+        const map = projectPad(req.params.id);
+        if (!fsSync.existsSync(map)) return cb(new Error("Project bestaat niet"));
+        if (!Array.isArray(req._websitePaden)) {
+          let lijst;
+          try {
+            lijst = JSON.parse(req.body?.paden);
+          } catch {
+            lijst = null;
+          }
+          req._websitePaden = Array.isArray(lijst) ? lijst : [];
+          req._websitePadIndex = 0;
+        }
+        const pad = req._websitePaden[req._websitePadIndex] ?? file.originalname;
+        req._websitePadIndex++;
+        file._websiteRelatiefPad = veiligRelatiefPad(pad);
+        const volledigeMap = path.join(map, "website", path.dirname(file._websiteRelatiefPad));
+        fsSync.mkdirSync(volledigeMap, { recursive: true });
+        cb(null, volledigeMap);
+      } catch (fout) {
+        cb(fout);
+      }
+    },
+    filename: (req, file, cb) => {
+      cb(null, path.basename(file._websiteRelatiefPad || veiligRelatiefPad(file.originalname)));
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024, files: 2000 },
+});
+
+// Website uploaden (vervangt een eventuele eerdere upload, die gaat naar .prullenbak)
+app.post("/api/projecten/:id/website", vereistRecht("projecten"), async (req, res, next) => {
+  const map = projectPad(req.params.id);
+  const websiteMap = path.join(map, "website");
+
+  if (fsSync.existsSync(websiteMap)) {
+    const prullenbak = path.join(map, ".prullenbak", `website-${Date.now()}`);
+    await fs.mkdir(path.dirname(prullenbak), { recursive: true });
+    await fs.rename(websiteMap, prullenbak);
+  }
+
+  next();
+}, uploadWebsite.array("bestanden"), async (req, res) => {
+  const project = await leesProject(req.params.id);
+  project.bijgewerkt = new Date().toISOString();
+  await schrijfProject(req.params.id, project);
+  res.status(201).json({ aantal: req.files.length });
+});
+
+// Bestandenlijst van de geüploade website (platte lijst met relatieve paden)
+app.get("/api/projecten/:id/website", async (req, res) => {
+  const websiteMap = path.join(projectPad(req.params.id), "website");
+
+  let namen = [];
+  try {
+    namen = await fs.readdir(websiteMap, { recursive: true });
+  } catch {
+    return res.json({ bestaat: false, heeftIndex: false, bestanden: [] });
+  }
+
+  const bestanden = [];
+  for (const naam of namen) {
+    const volledig = path.join(websiteMap, naam);
+    const info = await fs.stat(volledig).catch(() => null);
+    if (info?.isFile() && !path.basename(naam).startsWith(".")) {
+      bestanden.push({ pad: naam.replace(/\\/g, "/"), grootte: info.size });
+    }
+  }
+  bestanden.sort((a, b) => a.pad.localeCompare(b.pad));
+
+  res.json({
+    bestaat: bestanden.length > 0,
+    heeftIndex: bestanden.some((b) => b.pad === "index.html"),
+    bestanden,
+  });
+});
+
+// Website verwijderen (verplaatst naar .prullenbak, zonder te vervangen)
+app.delete("/api/projecten/:id/website", vereistRecht("projecten"), async (req, res) => {
+  const map = projectPad(req.params.id);
+  const websiteMap = path.join(map, "website");
+
+  if (fsSync.existsSync(websiteMap)) {
+    const prullenbak = path.join(map, ".prullenbak", `website-${Date.now()}`);
+    await fs.mkdir(path.dirname(prullenbak), { recursive: true });
+    await fs.rename(websiteMap, prullenbak);
+  }
+
+  res.json({ ok: true });
+});
+
 // ---------- API: klanten ----------
 
 // Alle klanten ophalen (alfabetisch)
@@ -1254,6 +1390,61 @@ app.get("/api/facturen/:id/pdf", async (req, res) => {
   const factuur = (await leesFacturen()).find((f) => f.id === req.params.id);
   if (!factuur) return res.status(404).json({ fout: "Factuur niet gevonden." });
   res.sendFile(path.join(FACTUREN_MAP, `${factuur.nummer}.pdf`));
+});
+
+// Diensten: de prijslijst voor de prijscalculator
+app.get("/api/diensten", async (req, res) => {
+  res.json(await leesDiensten());
+});
+
+app.post("/api/diensten", vereistRecht("facturen"), async (req, res) => {
+  const naam = String(req.body.naam || "").trim().slice(0, 100);
+  const prijs = Number(req.body.prijs);
+  const btw = BTW_TARIEVEN.includes(Number(req.body.btw)) ? Number(req.body.btw) : 21;
+
+  if (!naam) return res.status(400).json({ fout: "Geef de dienst een naam." });
+  if (!Number.isFinite(prijs) || prijs < 0) return res.status(400).json({ fout: "Ongeldige prijs." });
+
+  const lijst = await leesDiensten();
+  const basis = maakSlug(naam) || "dienst";
+  let id = basis;
+  let i = 2;
+  while (lijst.some((d) => d.id === id)) id = `${basis}-${i++}`;
+
+  const dienst = { id, naam, prijs: Math.round(prijs * 100) / 100, btw, omschrijving: String(req.body.omschrijving || "").trim().slice(0, 200) };
+  lijst.push(dienst);
+  await schrijfDiensten(lijst);
+  res.status(201).json(dienst);
+});
+
+app.patch("/api/diensten/:id", vereistRecht("facturen"), async (req, res) => {
+  const lijst = await leesDiensten();
+  const dienst = lijst.find((d) => d.id === req.params.id);
+  if (!dienst) return res.status(404).json({ fout: "Dienst niet gevonden." });
+
+  if (req.body.naam !== undefined) dienst.naam = String(req.body.naam).trim().slice(0, 100);
+  if (req.body.omschrijving !== undefined) dienst.omschrijving = String(req.body.omschrijving).trim().slice(0, 200);
+  if (req.body.prijs !== undefined) {
+    const prijs = Number(req.body.prijs);
+    if (!Number.isFinite(prijs) || prijs < 0) return res.status(400).json({ fout: "Ongeldige prijs." });
+    dienst.prijs = Math.round(prijs * 100) / 100;
+  }
+  if (req.body.btw !== undefined) {
+    if (!BTW_TARIEVEN.includes(Number(req.body.btw))) return res.status(400).json({ fout: "Onbekend BTW-tarief." });
+    dienst.btw = Number(req.body.btw);
+  }
+
+  await schrijfDiensten(lijst);
+  res.json(dienst);
+});
+
+app.delete("/api/diensten/:id", vereistRecht("facturen"), async (req, res) => {
+  const lijst = await leesDiensten();
+  if (!lijst.some((d) => d.id === req.params.id)) {
+    return res.status(404).json({ fout: "Dienst niet gevonden." });
+  }
+  await schrijfDiensten(lijst.filter((d) => d.id !== req.params.id));
+  res.json({ ok: true });
 });
 
 // ---------- API: stijlgids ----------
