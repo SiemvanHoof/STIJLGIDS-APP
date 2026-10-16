@@ -114,12 +114,12 @@ Dat blijft los van de eigen merkkleur van het dashboard hierboven.
 
 ## Status
 
-Klaar: stap 1–16 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
+Klaar: stap 1–17 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
 met live voorbeeld, PDF/PNG-export, flexibele fonts + kopjes over het merk, pagina's Projecten,
 Stijlgidsen en Klanten, Instellingen met studionaam/logo/standaard-stijlgids/opslagpaden,
 inloggen + rollen, fijnmazige rechten per rol, bestanden bij een klant, facturen & offertes,
 prijscalculator, website-preview per project, "te laat"-indicator bij facturen, financieel
-overzicht op het Dashboard).
+overzicht op het Dashboard, klant-feedback/revisies per project).
 
 Geparkeerd: de PDF moet later een andere opzet krijgen (Siem bepaalt nog hoe, mogelijk liggende
 "borden" zoals een brand-guidelines-presentatie). Niet zelf aanpassen zonder te vragen.
@@ -131,9 +131,7 @@ en dat vanaf de klantpagina kunnen navigeren. Gat-analyse tegen wat er al staat 
 Prijscalculator, Offertes/Facturen, Projecten, Stijlgids, Klantbestanden, Rollen) leverde deze
 ontbrekende stukken op, in de afgesproken bouwvolgorde:
 
-1. Stap 17: klant-feedback/revisies bijhouden per project (nu alleen vrije notities, geen
-   apart revisie-log) — nog te bouwen
-2. Stap 18: klant-procesoverzicht — de klantpagina wordt het centrale dossier: een
+1. Stap 18: klant-procesoverzicht — de klantpagina wordt het centrale dossier: een
    stappen-overzicht (**intake/gesprek** → offerte → project → stijlgids → website →
    feedback → oplevering → factuur → betaald) met per stap status en een knop naar de
    volgende actie — nog te bouwen. Intake-deel (afgesproken okt 2026): klant toevoegen bij
@@ -143,11 +141,29 @@ ontbrekende stukken op, in de afgesproken bouwvolgorde:
    Siem vult 'm zelf in zoals nu. Nieuw nodig: een plek voor het gespreksverslag op de
    klantpagina (apart veld, of het bestaande `notities`-veld hiervoor gebruiken — nog te
    kiezen) en een "Maak project van dit gesprek"-knop.
-3. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
+2. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
    nog te bouwen
 
 Elke stap: eerst een kort plan (plan mode), dan bouwen, dan testen, dan een eigen git-commit
 — zelfde werkwijze als tot nu toe.
+
+## Stap 17: Klant-feedback/revisies bijhouden per project (klaar, okt 2026)
+
+Simpele lijst per project om revisierondes/feedback vast te leggen (datum, omschrijving,
+afgehandeld ja/nee) — voorheen alleen een vrij notities-veld bij een klant, geen
+gestructureerde manier per project.
+
+- Opgeslagen als `revisies: [{ id, datum, omschrijving, afgehandeld }]` direct in
+  `project.json` — geen apart bestand, `leesProject()`/`schrijfProject()` sloegen al
+  willekeurige velden generiek op/terug.
+- Nieuwe routes `POST/PATCH/DELETE /api/projecten/:id/revisies(/:revisieId)`, achter
+  `vereistRecht("projecten")` (lezen gaat al mee via de bestaande project-GETs). `id` via
+  `crypto.randomUUID()`.
+- Frontend: nieuwe sectie "Feedback & revisies" op de projectpagina, `revisieRij()` volgt
+  hetzelfde `.project`-rijpatroon als `documentRij()`/`projectRij()`. Inline tekstveld +
+  knop om toe te voegen (geen modal, voor snelheid — ook met Enter te bevestigen); klikken
+  op het rondje (geel/open ↔ groen/vinkje) schakelt `afgehandeld` om. Ververst via de
+  bestaande `laadProjecten()` na elke mutatie, geen nieuwe client-state nodig.
 
 ## Stap 16: Financieel overzicht op het Dashboard (klaar, okt 2026)
 
