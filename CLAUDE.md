@@ -114,11 +114,12 @@ Dat blijft los van de eigen merkkleur van het dashboard hierboven.
 
 ## Status
 
-Klaar: stap 1–15 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
+Klaar: stap 1–16 (basis, server met mappen, dashboard, projectpagina met uploads, stijlgids-editor
 met live voorbeeld, PDF/PNG-export, flexibele fonts + kopjes over het merk, pagina's Projecten,
 Stijlgidsen en Klanten, Instellingen met studionaam/logo/standaard-stijlgids/opslagpaden,
 inloggen + rollen, fijnmazige rechten per rol, bestanden bij een klant, facturen & offertes,
-prijscalculator, website-preview per project, "te laat"-indicator bij facturen).
+prijscalculator, website-preview per project, "te laat"-indicator bij facturen, financieel
+overzicht op het Dashboard).
 
 Geparkeerd: de PDF moet later een andere opzet krijgen (Siem bepaalt nog hoe, mogelijk liggende
 "borden" zoals een brand-guidelines-presentatie). Niet zelf aanpassen zonder te vragen.
@@ -130,11 +131,9 @@ en dat vanaf de klantpagina kunnen navigeren. Gat-analyse tegen wat er al staat 
 Prijscalculator, Offertes/Facturen, Projecten, Stijlgids, Klantbestanden, Rollen) leverde deze
 ontbrekende stukken op, in de afgesproken bouwvolgorde:
 
-1. Stap 16: financieel overzicht op het Dashboard (omzet deze maand, openstaande facturen) —
-   nog te bouwen
-2. Stap 17: klant-feedback/revisies bijhouden per project (nu alleen vrije notities, geen
+1. Stap 17: klant-feedback/revisies bijhouden per project (nu alleen vrije notities, geen
    apart revisie-log) — nog te bouwen
-3. Stap 18: klant-procesoverzicht — de klantpagina wordt het centrale dossier: een
+2. Stap 18: klant-procesoverzicht — de klantpagina wordt het centrale dossier: een
    stappen-overzicht (**intake/gesprek** → offerte → project → stijlgids → website →
    feedback → oplevering → factuur → betaald) met per stap status en een knop naar de
    volgende actie — nog te bouwen. Intake-deel (afgesproken okt 2026): klant toevoegen bij
@@ -144,11 +143,28 @@ ontbrekende stukken op, in de afgesproken bouwvolgorde:
    Siem vult 'm zelf in zoals nu. Nieuw nodig: een plek voor het gespreksverslag op de
    klantpagina (apart veld, of het bestaande `notities`-veld hiervoor gebruiken — nog te
    kiezen) en een "Maak project van dit gesprek"-knop.
-4. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
+3. Stap 19: menu opdelen in gegroepeerde categorieën (laatste, als alle pagina's er zijn) —
    nog te bouwen
 
 Elke stap: eerst een kort plan (plan mode), dan bouwen, dan testen, dan een eigen git-commit
 — zelfde werkwijze als tot nu toe.
+
+## Stap 16: Financieel overzicht op het Dashboard (klaar, okt 2026)
+
+Twee nieuwe stat-kaarten op het Dashboard: omzet deze maand (som van facturen met status
+"betaald" waarvan `bijgewerkt` in de huidige maand/jaar valt — zelfde proxy-patroon als de
+bestaande `klaarDezeMaand`, er is geen apart betaaldatum-veld) en openstaande facturen
+(totaalbedrag + aantal "te laat", hergebruikt dezelfde voorwaarde als `factuurTeLaatTekst()`
+uit stap 15). Beide linken naar de Facturen-pagina.
+
+- `statKaart()` kreeg optionele `linkLabel`/`linkNaar`-parameters (default blijft "Bekijk
+  projecten" / `projecten`, dus de 4 bestaande project-kaarten zijn ongewijzigd) zodat een
+  kaart ook naar een andere pagina kan linken dan Projecten. Nieuwe generieke
+  `data-naar-pagina`-click-handler ernaast, los van de bestaande project-specifieke
+  `data-naar-projecten`.
+- `.stats`-grid gebruikte al `repeat(auto-fit, minmax(220px, 1fr))` — wrapt vanzelf naar een
+  tweede rij bij 6 kaarten, geen CSS-wijziging nodig.
+- Puur client-side, geen server-wijzigingen.
 
 ## Stap 15: "Te laat"-indicator bij facturen (klaar, okt 2026)
 
