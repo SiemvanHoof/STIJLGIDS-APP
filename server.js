@@ -883,6 +883,39 @@ app.post("/api/projecten/:id/open", (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- API: revisies (feedback per project) ----------
+
+app.post("/api/projecten/:id/revisies", vereistRecht("projecten"), async (req, res) => {
+  const omschrijving = String(req.body.omschrijving || "").trim().slice(0, 500);
+  if (!omschrijving) return res.status(400).json({ fout: "Geef een omschrijving." });
+
+  const project = await leesProject(req.params.id);
+  const revisie = { id: crypto.randomUUID(), datum: new Date().toISOString(), omschrijving, afgehandeld: false };
+  project.revisies = [...(project.revisies || []), revisie];
+  project.bijgewerkt = new Date().toISOString();
+  await schrijfProject(req.params.id, project);
+  res.status(201).json(revisie);
+});
+
+app.patch("/api/projecten/:id/revisies/:revisieId", vereistRecht("projecten"), async (req, res) => {
+  const project = await leesProject(req.params.id);
+  const revisie = (project.revisies || []).find((r) => r.id === req.params.revisieId);
+  if (!revisie) return res.status(404).json({ fout: "Revisie niet gevonden." });
+
+  if (req.body.afgehandeld !== undefined) revisie.afgehandeld = !!req.body.afgehandeld;
+  project.bijgewerkt = new Date().toISOString();
+  await schrijfProject(req.params.id, project);
+  res.json(revisie);
+});
+
+app.delete("/api/projecten/:id/revisies/:revisieId", vereistRecht("projecten"), async (req, res) => {
+  const project = await leesProject(req.params.id);
+  project.revisies = (project.revisies || []).filter((r) => r.id !== req.params.revisieId);
+  project.bijgewerkt = new Date().toISOString();
+  await schrijfProject(req.params.id, project);
+  res.json({ ok: true });
+});
+
 // ---------- API: website-preview ----------
 // De echte, los gebouwde website van een project (anders dan de gegenereerde stijlgids-site)
 

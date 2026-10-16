@@ -645,6 +645,42 @@ async function verwijderWebsite() {
   }
 }
 
+function probeerRevisieToevoegen() {
+  const invoer = document.getElementById("revisie-invoer");
+  const omschrijving = invoer?.value.trim();
+  if (!omschrijving) return;
+  invoer.value = "";
+  voegRevisieToe(omschrijving);
+}
+
+async function voegRevisieToe(omschrijving) {
+  try {
+    await api(`/api/projecten/${openProjectId}/revisies`, { method: "POST", body: JSON.stringify({ omschrijving }) });
+    await laadProjecten();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function wijzigRevisie(id, afgehandeld) {
+  try {
+    await api(`/api/projecten/${openProjectId}/revisies/${id}`, { method: "PATCH", body: JSON.stringify({ afgehandeld }) });
+    await laadProjecten();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
+async function verwijderRevisie(id) {
+  try {
+    await api(`/api/projecten/${openProjectId}/revisies/${id}`, { method: "DELETE" });
+    toast("Revisie verwijderd");
+    await laadProjecten();
+  } catch (fout) {
+    toast(fout.message, "fout");
+  }
+}
+
 async function laadKlantBestanden() {
   if (!openKlantId) return;
   try {
@@ -819,6 +855,21 @@ function projectRij(project) {
           ${statusSelect(project)}
         </div>
       </div>
+    </article>
+  `;
+}
+
+function revisieRij(r) {
+  return `
+    <article class="project">
+      <button class="icon-tile icon-tile--${r.afgehandeld ? "green" : "yellow"}" data-revisie-toggel="${esc(r.id)}" title="${r.afgehandeld ? "Markeer als open" : "Markeer als afgehandeld"}">
+        <i data-lucide="${r.afgehandeld ? "circle-check" : "circle"}"></i>
+      </button>
+      <span class="project__info">
+        <span class="project__meta">${korteDatum(r.datum)}</span>
+        <span class="project__naam">${esc(r.omschrijving)}</span>
+      </span>
+      <button class="icon-btn" data-revisie-weg="${esc(r.id)}" title="Verwijderen"><i data-lucide="trash-2"></i></button>
     </article>
   `;
 }
@@ -2159,6 +2210,28 @@ function renderProject() {
       </ul>` : ""}
     </section>
 
+    <section class="panel">
+      <header class="panel__head">
+        <div class="panel__titel">
+          <i data-lucide="message-square"></i>
+          <h2>Feedback &amp; revisies</h2>
+          <span class="teller">${(p.revisies || []).filter((r) => !r.afgehandeld).length}</span>
+        </div>
+      </header>
+      ${magIk("projecten") ? `
+      <div class="veld-rij">
+        <input type="text" class="ed-input" id="revisie-invoer" placeholder="Bijv. Logo iets groter maken" maxlength="500">
+        <button type="button" class="btn btn--primary" id="revisie-toevoegen">
+          <i data-lucide="plus"></i> Toevoegen
+        </button>
+      </div>` : ""}
+      <div class="project-lijst">
+        ${(p.revisies || []).length
+          ? p.revisies.map(revisieRij).join("")
+          : legeStaat("message-square", "Nog geen feedback", "Voeg hierboven de eerste revisie toe.")}
+      </div>
+    </section>
+
     <label class="dropzone" id="dropzone">
       <input type="file" multiple id="upload-input" hidden>
       <div class="icon-tile"><i data-lucide="upload"></i></div>
@@ -2578,6 +2651,19 @@ content.addEventListener("click", (e) => {
   if (e.target.closest("#website-kiezen")) return document.getElementById("website-input").click();
   const websiteWeg = e.target.closest("#website-weg");
   if (websiteWeg) return bevestigKlik(websiteWeg, verwijderWebsite);
+
+  if (e.target.closest("#revisie-toevoegen")) return probeerRevisieToevoegen();
+
+  const revisieToggel = e.target.closest("[data-revisie-toggel]");
+  if (revisieToggel) {
+    const r = (projecten.find((p) => p.id === openProjectId)?.revisies || [])
+      .find((rev) => rev.id === revisieToggel.dataset.revisieToggel);
+    return wijzigRevisie(revisieToggel.dataset.revisieToggel, !r?.afgehandeld);
+  }
+
+  const revisieWeg = e.target.closest("[data-revisie-weg]");
+  if (revisieWeg) return bevestigKlik(revisieWeg, () => verwijderRevisie(revisieWeg.dataset.revisieWeg));
+
   if (e.target.closest("#open-projecten-map")) return openOpslagMap("projecten");
   if (e.target.closest("#open-data-map")) return openOpslagMap("data");
   if (e.target.closest("#fact-opslaan")) return slaFacturatieOp();
@@ -2587,6 +2673,14 @@ content.addEventListener("click", (e) => {
   if (weg) {
     const actie = openKlantId ? verwijderKlantBestand : verwijderBestand;
     return bevestigKlik(weg, () => actie(weg.dataset.verwijder, weg.dataset.naam));
+  }
+});
+
+// Enter in het revisie-invoerveld voegt 'm meteen toe
+content.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.id === "revisie-invoer") {
+    e.preventDefault();
+    probeerRevisieToevoegen();
   }
 });
 
